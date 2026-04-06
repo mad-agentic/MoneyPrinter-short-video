@@ -11,3 +11,4 @@ auto.sh
 /.agent
 .env
 /frontend/node_modules
+refs/

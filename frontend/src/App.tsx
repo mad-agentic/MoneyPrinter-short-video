@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
-import { Play, Settings, Video, Bird, Users, Briefcase, Zap, Terminal, FileVideo, Image as ImageIcon, Loader2, CheckCircle, Pencil, FolderOpen, X, Copy, Plus, Check, Square, Trash2 } from 'lucide-react';
+import { Play, Settings, Video, Bird, Users, Briefcase, Zap, Terminal, FileVideo, Image as ImageIcon, Loader2, CheckCircle, Pencil, FolderOpen, X, Copy, Plus, Check, Square, Trash2, Lightbulb } from 'lucide-react';
+import ResearchWorkspace from './ResearchWorkspace';
 
 const API = 'http://127.0.0.1:15001';
 const DRAFT_SESSION_KEY = '__draft__';
@@ -23,7 +24,7 @@ const GENERATION_STEPS = [
 ] as const;
 const REGENERATE_STEP_OPTIONS = GENERATION_STEPS.filter((step) => step.id !== 'published');
 
-type ActiveTab = 'youtube' | 'twitter' | 'affiliate' | 'outreach' | 'settings';
+type ActiveTab = 'youtube' | 'twitter' | 'affiliate' | 'outreach' | 'research' | 'settings';
 type ReloadMode = 'auto' | '5s' | '15s' | '30s' | 'off';
 
 interface SystemStatus {
@@ -31,6 +32,23 @@ interface SystemStatus {
   options?: unknown[];
   youtube_options?: unknown[];
   twitter_options?: unknown[];
+}
+
+interface TtsHealthStatus {
+  primary_engine?: string;
+  fallback_engine?: string;
+  primary_ready?: boolean;
+  fallback_ready?: boolean;
+  primary_detail?: string;
+  fallback_detail?: string;
+  language?: string;
+  voice?: string;
+  warmup?: {
+    attempted?: boolean;
+    ok?: boolean;
+    engine?: string;
+    detail?: string;
+  };
 }
 
 interface GalleryItem {
@@ -112,7 +130,7 @@ interface NavItemProps {
   label: string;
   isActive: boolean;
   onClick: () => void;
-  color: 'cyan' | 'blue' | 'purple' | 'green';
+  color: 'cyan' | 'blue' | 'purple' | 'green' | 'amber';
 }
 
 interface PremiumCardProps {
@@ -126,6 +144,16 @@ interface NeonButtonProps {
   isLoading: boolean;
   icon: ReactNode;
   disabled?: boolean;
+}
+
+interface ResearchIdeaPrefill {
+  title: string;
+  hook?: string;
+  format?: string;
+  main_points?: string[];
+  script_outline?: string;
+  cta?: string;
+  target_audience?: string;
 }
 
 const getSessionLabel = (session: SessionSummary): string => session.name || session.session_id.slice(0, 6);
@@ -162,6 +190,31 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
+const buildVideoPrefillFromIdea = (idea: ResearchIdeaPrefill): { subject: string; script: string } => {
+  const clean = (value: string | undefined): string => String(value || '').trim();
+  const subject = clean(idea.title) || 'Untitled video idea';
+
+  const points = (idea.main_points || [])
+    .map((point) => clean(point))
+    .filter(Boolean)
+    .map((point, index) => `${index + 1}. ${point}`);
+
+  const sections: string[] = [];
+  if (clean(idea.hook)) sections.push(`Hook: ${clean(idea.hook)}`);
+  if (points.length > 0) sections.push(`Main points:\n${points.join('\n')}`);
+  if (clean(idea.script_outline)) sections.push(`Script outline:\n${clean(idea.script_outline)}`);
+  if (clean(idea.cta)) sections.push(`CTA: ${clean(idea.cta)}`);
+  if (clean(idea.target_audience)) sections.push(`Target audience: ${clean(idea.target_audience)}`);
+  if (clean(idea.format)) sections.push(`Style: ${clean(idea.format)}`);
+
+  let script = sections.join('\n\n').trim();
+  if (script.length < 30) {
+    script = `Topic: ${subject}\n\nHook: ${clean(idea.hook) || subject}\n\nShare 3 practical points with clear examples and end with a call to action.`;
+  }
+
+  return { subject, script };
+};
+
 const STAGE_LABELS: Record<string, string> = {
   init: 'Initializing',
   subject_set: 'Subject Set',
@@ -191,9 +244,15 @@ const getStageBadgeColor = (stage: string): string => {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('youtube');
+  // Prefill fields passed from Research workspace → YouTube workspace
+  const [prefillSubject, setPrefillSubject] = useState('');
+  const [prefillScript, setPrefillScript] = useState('');
+  const [prefillForceNewSession, setPrefillForceNewSession] = useState(false);
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState('');
+  const [ttsHealth, setTtsHealth] = useState<TtsHealthStatus | null>(null);
+  const [ttsHealthError, setTtsHealthError] = useState('');
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [selectedGalleryImages, setSelectedGalleryImages] = useState<string[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -325,6 +384,34 @@ export default function App() {
     };
 
     return () => { es.close(); };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchTtsHealth = async () => {
+      try {
+        const res = await fetch(`${API}/system/tts-health`);
+        if (!res.ok) {
+          throw new Error(`TTS health request failed (${res.status})`);
+        }
+        const data = (await res.json()) as TtsHealthStatus;
+        if (!mounted) return;
+        setTtsHealth(data);
+        setTtsHealthError('');
+      } catch (err) {
+        if (!mounted) return;
+        setTtsHealth(null);
+        setTtsHealthError(getErrorMessage(err, 'Cannot reach backend TTS health endpoint.'));
+      }
+    };
+
+    fetchTtsHealth();
+    const interval = setInterval(fetchTtsHealth, 7000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   // Keep gallery/sessions in sync and respect current filter mode (All vs selected session).
@@ -465,6 +552,7 @@ export default function App() {
           <NavItem icon={<Bird />} label="Twitter Bot" isActive={activeTab === 'twitter'} onClick={() => setActiveTab('twitter')} color="blue" />
           <NavItem icon={<Briefcase />} label="Affiliate CRM" isActive={activeTab === 'affiliate'} onClick={() => setActiveTab('affiliate')} color="purple" />
           <NavItem icon={<Users />} label="Outreach AI" isActive={activeTab === 'outreach'} onClick={() => setActiveTab('outreach')} color="green" />
+          <NavItem icon={<Lightbulb />} label="Research & Ideas" isActive={activeTab === 'research'} onClick={() => setActiveTab('research')} color="amber" />
 
           {/* ── SESSION SELECTOR ── */}
           <div className="mt-4 pt-4 border-t border-white/5">
@@ -538,6 +626,26 @@ export default function App() {
           {statusError && (
             <p className="mt-2 text-[10px] text-red-300 hidden lg:block">{statusError}</p>
           )}
+          <div className="mt-2 hidden lg:block rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">TTS Engine</p>
+            {ttsHealth ? (
+              <>
+                <p className={`text-[11px] font-semibold ${ttsHealth.primary_ready ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  {ttsHealth.primary_engine || 'unknown'} {ttsHealth.primary_ready ? 'ready' : 'degraded'}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-1 truncate" title={ttsHealth.primary_detail || ''}>
+                  {ttsHealth.primary_detail || 'No detail'}
+                </p>
+                {ttsHealth.warmup?.attempted && (
+                  <p className={`text-[10px] mt-1 ${ttsHealth.warmup.ok ? 'text-emerald-300' : 'text-amber-300'}`} title={ttsHealth.warmup.detail || ''}>
+                    Warm-up: {ttsHealth.warmup.ok ? 'ok' : 'warning'}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-[10px] text-red-300">{ttsHealthError || 'Unavailable'}</p>
+            )}
+          </div>
         </div>
       </aside>
 
@@ -568,6 +676,10 @@ export default function App() {
                 reloadIntervalMs={reloadIntervalMs}
                 selectedGalleryImages={selectedGalleryImages}
                 clearSelectedGalleryImages={() => setSelectedGalleryImages([])}
+                prefillSubject={prefillSubject}
+                prefillScript={prefillScript}
+                forceNewSessionFromPrefill={prefillForceNewSession}
+                onPrefillConsumed={() => { setPrefillSubject(''); setPrefillScript(''); setPrefillForceNewSession(false); }}
               />
             )}
             {activeTab === 'settings' && <ConfigWorkspace />}
@@ -579,6 +691,20 @@ export default function App() {
                 <h3 className="text-xl font-bold text-slate-300 mb-2">Outreach AI</h3>
                 <p className="text-slate-500">Outreach workspace coming soon.</p>
               </PremiumCard>
+            )}
+            {activeTab === 'research' && (
+              <div className="h-[calc(100vh-12rem)] -mx-6 lg:-mx-10 -mt-8">
+                <ResearchWorkspace
+                  onMakeVideo={(idea) => {
+                    const prefill = buildVideoPrefillFromIdea(idea);
+                    setActiveSessionId('');
+                    setPrefillSubject(prefill.subject);
+                    setPrefillScript(prefill.script);
+                    setPrefillForceNewSession(true);
+                    setActiveTab('youtube');
+                  }}
+                />
+              </div>
             )}
           </div>
         </section>
@@ -936,6 +1062,7 @@ function NavItem({ icon, label, isActive, onClick, color }: NavItemProps) {
     blue: 'text-blue-400 bg-blue-400/10 border-blue-500/30',
     purple: 'text-purple-400 bg-purple-400/10 border-purple-500/30',
     green: 'text-green-400 bg-green-400/10 border-green-500/30',
+    amber: 'text-amber-400 bg-amber-400/10 border-amber-500/30',
   };
   const activeStyle = isActive ? colorMap[color] : 'text-slate-500 border-transparent hover:bg-white/5 hover:text-slate-300';
   return (
@@ -1848,11 +1975,19 @@ function YouTubeWorkspace({
   reloadIntervalMs,
   selectedGalleryImages,
   clearSelectedGalleryImages,
+  prefillSubject = '',
+  prefillScript = '',
+  forceNewSessionFromPrefill = false,
+  onPrefillConsumed,
 }: {
   activeSessionId: string;
   reloadIntervalMs: number;
   selectedGalleryImages: string[];
   clearSelectedGalleryImages: () => void;
+  prefillSubject?: string;
+  prefillScript?: string;
+  forceNewSessionFromPrefill?: boolean;
+  onPrefillConsumed?: () => void;
 }) {
   const [accounts, setAccounts] = useState<YouTubeAccount[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
@@ -1911,6 +2046,38 @@ function YouTubeWorkspace({
   const [sessionSyncError, setSessionSyncError] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [savingSection, setSavingSection] = useState<'' | 'subject' | 'script' | 'metadata'>('');
+  // Flag: auto-trigger generate once prefill state settles
+  const autoGeneratePendingRef = useRef(false);
+  const pendingIdeaPrefillRef = useRef<{ subject: string; script: string } | null>(null);
+  const pendingIdeaForceNewSessionRef = useRef(false);
+  const autoGenerateBlockedToastShownRef = useRef(false);
+  const workspaceTopRef = useRef<HTMLDivElement>(null);
+
+  // Step 1 — Apply prefill from Research workspace, schedule auto-generate
+  useEffect(() => {
+    if (!prefillSubject && !prefillScript) return;
+    const targetSessionKey = activeSessionId || sessionId || DRAFT_SESSION_KEY;
+    pendingIdeaPrefillRef.current = {
+      subject: String(prefillSubject || '').trim(),
+      script: String(prefillScript || '').trim(),
+    };
+    pendingIdeaForceNewSessionRef.current = Boolean(forceNewSessionFromPrefill);
+    if (prefillSubject) {
+      setCustomSubject(prefillSubject);
+      setCustomSubjectDirtySessionKey(targetSessionKey);
+    }
+    if (prefillScript) {
+      setCustomScript(prefillScript);
+      setCustomScriptDirtySessionKey(targetSessionKey);
+    }
+    autoGeneratePendingRef.current = true;
+    autoGenerateBlockedToastShownRef.current = false;
+    showToast('💡 Đã nhận idea, đang chuẩn bị auto-generate video...');
+    onPrefillConsumed?.();
+    // Scroll to top so user sees the filled fields + progress
+    setTimeout(() => workspaceTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillSubject, prefillScript, forceNewSessionFromPrefill, activeSessionId, sessionId]);
 
   const currentExtraScript = String(customScript || audioTextPreview || '');
   const normalizedAudioText = currentExtraScript.replace(/\s+/g, ' ').trim();
@@ -2360,13 +2527,15 @@ function YouTubeWorkspace({
     }
 
     setLoading(true);
+    const forceNewSession = pendingIdeaForceNewSessionRef.current;
     fetch(`${API}/youtube/${accountId}/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         subject: customSubject,
         script: normalizedAudioText,
-        resume_session_id: effectiveSessionId,
+        resume_session_id: forceNewSession ? '' : effectiveSessionId,
+        force_new_session: forceNewSession,
         publish_mode: publishMode,
         auto_push_social: autoPushSocial,
         is_for_kids: isForKids,
@@ -2386,11 +2555,65 @@ function YouTubeWorkspace({
         setActiveSessionStage('script');
         setSelectedRegenerateStep('script');
         setAudioTextPreview(customScript || data?.script || '');
+        pendingIdeaForceNewSessionRef.current = false;
         showToast(`✅ ${data.message} (Session: ${data.session_id?.slice(0,8)}…)`);
       })
       .catch((err) => showToast(`❌ ${(err as Error)?.message || 'Failed to start generation.'}`))
       .finally(() => setLoading(false));
   };
+
+  // Step 2 — Run auto-generate once prefill from Research is ready and valid.
+  useEffect(() => {
+    if (!autoGeneratePendingRef.current) return;
+
+    const pendingPrefill = pendingIdeaPrefillRef.current;
+    if (pendingPrefill) {
+      if (!customSubject.trim() && pendingPrefill.subject) {
+        setCustomSubject(pendingPrefill.subject);
+        setCustomSubjectDirtySessionKey(currentSessionKey);
+        return;
+      }
+      if (!normalizedAudioText && pendingPrefill.script) {
+        setCustomScript(pendingPrefill.script);
+        setCustomScriptDirtySessionKey(currentSessionKey);
+        return;
+      }
+    }
+
+    if (isGenerateBlocked || loading) {
+      if (!autoGenerateBlockedToastShownRef.current && generationWarnings.length > 0) {
+        autoGenerateBlockedToastShownRef.current = true;
+        showToast(`⚠️ Auto-generate chưa chạy: ${generationWarnings[0]}`);
+      }
+      return;
+    }
+
+    showToast('🚀 Đang auto-generate video từ idea...');
+    autoGeneratePendingRef.current = false;
+    pendingIdeaPrefillRef.current = null;
+    autoGenerateBlockedToastShownRef.current = false;
+    handleGenerate();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isGenerateBlocked,
+    loading,
+    generationWarnings,
+    preferredAccountId,
+    customSubject,
+    normalizedAudioText,
+    currentSessionKey,
+    effectiveSessionId,
+    publishMode,
+    autoPushSocial,
+    isForKids,
+    titleOverride,
+    descriptionOverride,
+    tagsOverride,
+    ttsVoice,
+    scriptLanguage,
+    englishCcBottom,
+    enableCc,
+  ]);
 
   const handleAutoGenerateAudioText = () => {
     const accountId = preferredAccountId;

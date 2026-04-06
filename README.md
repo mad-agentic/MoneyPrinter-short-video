@@ -12,6 +12,7 @@ Công cụ tự động hóa tạo và đăng video ngắn lên YouTube Shorts, 
 - **Twitter/X Bot** — Tạo nội dung bằng LLM và đăng bài tự động qua Selenium
 - **Affiliate Marketing** — Scrape sản phẩm Amazon, tạo pitch bằng LLM, đăng lên Twitter
 - **Outreach** — Scrape doanh nghiệp địa phương (Google Maps), tìm email và gửi email outreach tự động
+- **Research & Ideas** — Tự động tìm kiếm xu hướng từ web (Reddit, YouTube, TikTok), phân tích bằng LLM, tạo 5 ý tưởng video có script outline — rồi chuyển thẳng sang YouTube workspace để tạo video
 - **Web UI** — Giao diện React quản lý toàn bộ workflow, xem gallery, theo dõi log real-time
 - **CRON Jobs** — Lên lịch đăng bài tự động (1–3 lần/ngày)
 - **Multi-account** — Quản lý nhiều tài khoản YouTube và Twitter song song
@@ -217,6 +218,7 @@ MoneyPrinter-short-video/
 │   │   ├── youtube.py      # YouTube API routes
 │   │   ├── twitter.py      # Twitter API routes
 │   │   ├── affiliate.py    # Affiliate routes
+│   │   ├── research.py     # Research & Ideas chat API (SSE streaming)
 │   │   ├── session_manager.py
 │   │   └── log_stream.py   # SSE log streaming
 │   ├── classes/            # Core workflow classes
@@ -227,14 +229,16 @@ MoneyPrinter-short-video/
 │   │   └── Tts.py          # Text-to-speech wrapper
 │   ├── config.py           # Config reader (ROOT_DIR-based)
 │   ├── cache.py            # JSON persistence (.mp/)
-│   ├── llm_provider.py     # Ollama/OpenAI client
+│   ├── llm_provider.py     # Ollama/OpenAI client + streaming
+│   ├── research_engine.py  # Web search (ddgs) + LLM synthesis
 │   ├── main.py             # CLI interactive menu
 │   └── cron.py             # Headless scheduled runner
 ├── frontend/               # React + Vite + TypeScript UI
 │   ├── src/
-│   │   ├── App.tsx         # Main UI component
-│   │   ├── index.css       # Global styles (Tailwind)
-│   │   └── main.tsx        # React entry point
+│   │   ├── App.tsx               # Main UI component
+│   │   ├── ResearchWorkspace.tsx # Research & Ideas chat UI
+│   │   ├── index.css             # Global styles (Tailwind)
+│   │   └── main.tsx              # React entry point
 │   ├── package.json
 │   └── vite.config.ts
 ├── fonts/                  # Font files cho subtitle overlay
@@ -243,8 +247,11 @@ MoneyPrinter-short-video/
 ├── scripts/                # Utility scripts
 │   ├── preflight_local.py  # Kiểm tra dependencies
 │   └── upload_video.sh     # Upload video tiện ích
+├── refs/                   # Tài liệu tham khảo (không commit)
+│   └── last30days-skill/   # Ref: last30days research skill
 ├── .mp/                    # Runtime data (auto-generated)
-│   └── sessions/           # Dữ liệu từng session video
+│   ├── sessions/           # Dữ liệu từng session video
+│   └── research/           # Research sessions (conversation + ideas)
 ├── config.json             # Cấu hình chính
 ├── config.example.json     # Cấu hình mẫu
 ├── requirements.txt        # Python dependencies
@@ -273,6 +280,58 @@ Backend chạy tại `http://localhost:15001`.
 | POST | `/youtube/generate` | Bắt đầu tạo video |
 | POST | `/twitter/post` | Đăng tweet |
 | GET | `/media/*` | Serve media files |
+| POST | `/research/sessions` | Tạo research session mới |
+| GET | `/research/sessions` | Danh sách research sessions |
+| POST | `/research/sessions/{id}/chat` | Chat / research / tạo ideas (SSE streaming) |
+| GET | `/research/sessions/{id}/history` | Lịch sử hội thoại |
+| GET | `/research/sessions/{id}/ideas` | Danh sách ideas đã tạo |
+
+---
+
+## Research & Ideas — Tự động nghiên cứu xu hướng
+
+Tab **Research & Ideas** (icon 🔬) giúp tự động research xu hướng content và tạo ý tưởng video, lấy cảm hứng từ [last30days-skill](https://github.com/mvanhorn/last30days-skill).
+
+### Cách dùng
+
+1. Mở tab **Research & Ideas** trên sidebar
+2. Click **📁 Sessions** → nhập topic → click **+ Mới** để tạo session
+3. Chọn mode và gửi tin nhắn:
+
+| Mode | Chức năng |
+|---|---|
+| 💬 **Chat** | Hỏi đáp tự do với AI về content strategy |
+| 🔍 **Research** | Tự động tìm kiếm web (ddgs) → LLM phân tích xu hướng |
+| 💡 **Ideas** | Tạo 5 ý tưởng video đầy đủ (hook, script outline, CTA, format) |
+
+4. Sau khi có ideas, click **🎬 Tạo Video** trên card bất kỳ → tự động chuyển sang YouTube tab với title + script đã điền sẵn
+
+### Cách Research hoạt động
+
+```
+Nhập topic
+    ↓
+Tìm kiếm song song 4 nguồn (ddgs — không cần API key):
+  - 🌐 Web tổng hợp
+  - ▶️ YouTube Shorts
+  - 🟠 Reddit discussions
+  - 🎵 TikTok content
+    ↓
+LLM phân tích kết quả → xuất insight về xu hướng, hooks, format viral
+    ↓
+Mode Ideas → LLM tạo 5 ý tưởng JSON (title, hook, main_points, script_outline, cta)
+    ↓
+Click "Tạo Video" → YouTube workspace auto-fill
+```
+
+### Dữ liệu lưu tại
+
+```
+.mp/research/{session_id}/
+├── meta.json           # Metadata session (topic, timestamps)
+├── conversation.jsonl  # Lịch sử hội thoại (newline-delimited JSON)
+└── ideas.json          # 5 ideas đã tạo
+```
 
 ---
 
@@ -301,6 +360,12 @@ Backend chạy tại `http://localhost:15001`.
 **Ollama không kết nối được:** Chạy `ollama serve` và kiểm tra `ollama_base_url`.
 
 **Frontend không load:** Đợi vài giây sau khi chạy `start_hub.bat`, backend cần thời gian khởi động.
+
+**Research trả về "Connection error.":** LLM backend không phản hồi trong thời gian chờ. Kiểm tra LLM server đang chạy (Ollama / LM Studio). Backend gửi heartbeat SSE mỗi 2 giây để giữ kết nối — nếu LLM quá chậm (>2 phút) thì timeout.
+
+**Research search trả về 0 kết quả:** DuckDuckGo có rate limit. Đợi 30–60 giây và thử lại. Gói `ddgs` được dùng thay cho `duckduckgo_search` (đã đổi tên).
+
+**Ideas không parse được JSON:** LLM trả về text không đúng format JSON. Thử dùng model lớn hơn hoặc thêm context bằng cách chat trước ở mode Research rồi mới sang mode Ideas.
 
 ---
 

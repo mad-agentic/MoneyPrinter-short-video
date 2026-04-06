@@ -21,3 +21,6 @@ platformdirs
 fastapi
 uvicorn
 openai>=1.0.0
+ddgs
+# Optional multilingual TTS provider (recommended for Vietnamese):
+omnivoice

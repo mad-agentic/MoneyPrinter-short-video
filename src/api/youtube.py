@@ -22,6 +22,7 @@ class GenerateRequest(BaseModel):
     subject: str = ""
     script: str = ""
     resume_session_id: str = ""   # optional: force reuse a specific session
+    force_new_session: bool = False  # when True, always create a fresh session and skip cache lookup
     regenerate_from_step: str = ""  # optional: skip to this step (e.g., 'images', 'tts', 'video_generated')
     publish_mode: str = "manual_review"    # auto | manual_review
     auto_push_social: bool = True
@@ -133,7 +134,23 @@ def generate_and_upload_video(
         youtube.title_narration_text = title_override.strip()
         youtube.english_cc_bottom = bool(english_cc_bottom)
         youtube.enable_cc = bool(enable_cc)
-        tts = TTS(voice=tts_voice.strip() if str(tts_voice).strip() else None)
+        tts_language = (script_language.strip() if script_language.strip() else str(acc.get("language", "english")).strip())
+        tts = TTS(
+            voice=tts_voice.strip() if str(tts_voice).strip() else None,
+            language=tts_language,
+        )
+        tts_status = tts.runtime_status()
+        add_log(
+            "info",
+            "🎙️ TTS runtime: "
+            f"primary={tts_status['primary_engine']} ({'ready' if tts_status['primary_ready'] else 'not-ready'}), "
+            f"fallback={tts_status['fallback_engine']} ({'ready' if tts_status['fallback_ready'] else 'not-ready'}), "
+            f"language={tts_status['language']}, voice={tts_status['voice']}"
+        )
+        if not tts_status["primary_ready"]:
+            add_log("warning", f"⚠️ Primary TTS engine detail: {tts_status['primary_detail']}")
+        if not tts_status["fallback_ready"]:
+            add_log("warning", f"⚠️ Fallback TTS engine detail: {tts_status['fallback_detail']}")
 
         if custom_subject.strip():
             youtube.subject = custom_subject.strip()
@@ -224,7 +241,7 @@ def trigger_generation(account_id: str, req: GenerateRequest, background_tasks: 
         from api.session_manager import SessionManager
         session = SessionManager(req.resume_session_id)
         add_log("info", f"♻️  Resuming session {req.resume_session_id}")
-    elif req.subject.strip():
+    elif req.subject.strip() and not req.force_new_session:
         session = find_session_by_subject(req.subject.strip())
         if session:
             add_log("info", f"♻️  Found cached session {session.session_id} for subject: {req.subject}")
@@ -389,7 +406,22 @@ def generate_cc_preview(account_id: str, req: SubtitlePreviewRequest):
         youtube.english_cc_bottom = bool(req.english_cc_bottom)
         youtube.enable_cc = bool(req.enable_cc)
 
-        tts = TTS(voice=req.tts_voice.strip() if str(req.tts_voice).strip() else None)
+        tts = TTS(
+            voice=req.tts_voice.strip() if str(req.tts_voice).strip() else None,
+            language=language,
+        )
+        tts_status = tts.runtime_status()
+        add_log(
+            "info",
+            "🎙️ CC preview TTS runtime: "
+            f"primary={tts_status['primary_engine']} ({'ready' if tts_status['primary_ready'] else 'not-ready'}), "
+            f"fallback={tts_status['fallback_engine']} ({'ready' if tts_status['fallback_ready'] else 'not-ready'}), "
+            f"language={tts_status['language']}, voice={tts_status['voice']}"
+        )
+        if not tts_status["primary_ready"]:
+            add_log("warning", f"⚠️ Primary TTS engine detail: {tts_status['primary_detail']}")
+        if not tts_status["fallback_ready"]:
+            add_log("warning", f"⚠️ Fallback TTS engine detail: {tts_status['fallback_detail']}")
         preview_data = youtube.generate_subtitle_preview(tts)
 
         session.save_stage(

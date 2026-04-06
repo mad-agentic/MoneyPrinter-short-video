@@ -233,6 +233,86 @@ def get_tts_voice() -> str:
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
         return json.load(file).get("tts_voice", "Jasper")
 
+def get_tts_engine() -> str:
+    """
+    Gets the primary TTS engine.
+
+    Returns:
+        engine (str): Preferred TTS engine name.
+    """
+    with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
+        return str(json.load(file).get("tts_engine", "kitten")).strip().lower()
+
+def get_tts_fallback_engine() -> str:
+    """
+    Gets the fallback TTS engine used when primary engine fails.
+
+    Returns:
+        engine (str): Fallback TTS engine name.
+    """
+    with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
+        return str(json.load(file).get("tts_fallback_engine", "kitten")).strip().lower()
+
+def get_tts_language() -> str:
+    """
+    Gets the preferred TTS language hint.
+
+    Returns:
+        language (str): Language hint, e.g. "auto", "vietnamese", "english".
+    """
+    with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
+        return str(json.load(file).get("tts_language", "auto")).strip().lower()
+
+def get_tts_sample_rate() -> int:
+    """
+    Gets output sample rate for synthesized TTS audio.
+
+    Returns:
+        sample_rate (int): Output sample rate in Hz.
+    """
+    with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
+        return int(json.load(file).get("tts_sample_rate", 24000))
+
+def get_omnivoice_model() -> str:
+    """
+    Gets OmniVoice model ID.
+
+    Returns:
+        model (str): OmniVoice model identifier.
+    """
+    with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
+        return str(json.load(file).get("omnivoice_model", "k2-fsa/OmniVoice")).strip()
+
+def get_omnivoice_device_map() -> str:
+    """
+    Gets OmniVoice device map strategy.
+
+    Returns:
+        device_map (str): Device placement setting.
+    """
+    with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
+        return str(json.load(file).get("omnivoice_device_map", "auto")).strip()
+
+def get_omnivoice_dtype() -> str:
+    """
+    Gets OmniVoice tensor dtype strategy.
+
+    Returns:
+        dtype (str): Dtype name such as "auto", "float16", "float32".
+    """
+    with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
+        return str(json.load(file).get("omnivoice_dtype", "auto")).strip().lower()
+
+def get_omnivoice_instruct() -> str:
+    """
+    Gets optional OmniVoice style instruction used for voice design.
+
+    Returns:
+        instruct (str): Voice design instruction.
+    """
+    with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
+        return str(json.load(file).get("omnivoice_instruct", "")).strip()
+
 def get_tts_strict_mode() -> bool:
     """
     Gets whether TTS should fail the run when any chunk remains failed after fallback.
