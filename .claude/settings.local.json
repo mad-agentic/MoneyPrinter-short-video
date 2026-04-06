@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venvScriptspip.exe install:*)",
+      "Bash(\"venv/Scripts/pip.exe\" install:*)",
+      "Bash(\"venv/Scripts/python.exe\" -c \"from duckduckgo_search import DDGS; print\\(''duckduckgo_search OK''\\)\")",
+      "Bash(\"..\\\\venv\\\\Scripts\\\\python.exe\" -c \":*)",
+      "Bash(npm run:*)"
+    ]
+  }
+}

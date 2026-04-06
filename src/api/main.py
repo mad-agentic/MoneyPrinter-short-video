@@ -23,8 +23,10 @@ from config import get_first_time_running, ROOT_DIR   # ← ROOT_DIR from config
 from api.youtube import router as youtube_router
 from api.twitter import router as twitter_router
 from api.affiliate import router as affiliate_router
-from api.log_stream import _log_generator, get_log_history
+from api.research import router as research_router
+from api.log_stream import _log_generator, get_log_history, add_log
 from api.session_manager import list_sessions, rename_session, get_session, create_session, delete_session
+from classes.Tts import TTS
 
 # ── Project .mp directory (project root, NOT src/.mp) ──────────────────────
 MP_DIR = os.path.join(ROOT_DIR, '.mp')
@@ -77,6 +79,46 @@ app.add_middleware(
 app.include_router(youtube_router)
 app.include_router(twitter_router)
 app.include_router(affiliate_router)
+app.include_router(research_router)
+
+_tts_warmup_state: dict[str, Any] = {
+    "attempted": False,
+    "ok": False,
+    "engine": "unknown",
+    "detail": "Warm-up not started",
+}
+
+
+def _run_tts_warmup() -> None:
+    global _tts_warmup_state
+    try:
+        tts = TTS()
+        result = tts.warmup()
+        _tts_warmup_state = {
+            "attempted": True,
+            "ok": bool(result.get("ok", False)),
+            "engine": str(result.get("engine", "unknown")),
+            "detail": str(result.get("detail", "")),
+        }
+
+        if _tts_warmup_state["ok"]:
+            add_log("success", f"TTS warm-up ready ({_tts_warmup_state['engine']}): {_tts_warmup_state['detail']}")
+        else:
+            add_log("warning", f"TTS warm-up skipped/failed ({_tts_warmup_state['engine']}): {_tts_warmup_state['detail']}")
+    except Exception as exc:
+        _tts_warmup_state = {
+            "attempted": True,
+            "ok": False,
+            "engine": "unknown",
+            "detail": str(exc),
+        }
+        add_log("warning", f"TTS warm-up failed: {exc}")
+
+
+@app.on_event("startup")
+async def startup_warmup() -> None:
+    # Run in background thread so API boot is not blocked by model preload.
+    asyncio.create_task(asyncio.to_thread(_run_tts_warmup))
 
 @app.get("/")
 def read_root():
@@ -90,6 +132,13 @@ def get_status():
         "youtube_options": YOUTUBE_OPTIONS,
         "twitter_options": TWITTER_OPTIONS
     }
+
+
+@app.get("/system/tts-health")
+def get_tts_health():
+    status = TTS().runtime_status()
+    status["warmup"] = dict(_tts_warmup_state)
+    return status
 
 @app.get("/system/gallery")
 def get_gallery(session_id: str = ""):
@@ -213,6 +262,14 @@ EDITABLE_CONFIG_KEYS = {
     "whisper_beam_size",
     "tts_voice",
     "tts_strict_mode",
+    "tts_engine",
+    "tts_engine_fallback",
+    "tts_language",
+    "tts_sample_rate",
+    "omnivoice_model",
+    "omnivoice_device",
+    "omnivoice_dtype",
+    "omnivoice_instruct",
     "video_encode_preset",
     "video_encode_crf",
     "script_sentence_length",
