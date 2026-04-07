@@ -228,6 +228,26 @@ def generate_and_upload_video(
         clear_cancel(session_id)
 
 
+class DraftSessionRequest(BaseModel):
+    subject: str = ""
+    script: str = ""
+
+
+@router.post("/{account_id}/sessions/draft")
+def create_draft_session(account_id: str, req: DraftSessionRequest):
+    """Create a new session with subject+script without starting generation. Returns session_id."""
+    accounts = get_accounts("youtube")
+    acc = next((a for a in accounts if a["id"] == account_id), None)
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    name_hint = _build_session_name_hint(req.subject, req.script)
+    session = create_session(name_hint)
+    session.save_stage("init", subject=req.subject.strip(), script=req.script.strip())
+    add_log("info", f"📝 Draft session created: {session.session_id}")
+    return {"session_id": session.session_id, "status": "draft"}
+
+
 @router.post("/{account_id}/generate")
 def trigger_generation(account_id: str, req: GenerateRequest, background_tasks: BackgroundTasks):
     accounts = get_accounts("youtube")

@@ -44,11 +44,11 @@ def _resolve_omnivoice_dtype(dtype_name: str):
 def _voice_to_omnivoice_instruct(voice_name: str) -> str:
     voice_key = str(voice_name or "").strip().lower()
     mapping = {
-        "jasper": "male, medium pitch",
+        "jasper": "male, moderate pitch",
         "milo": "male, low pitch",
-        "luna": "female, medium pitch",
+        "luna": "female, moderate pitch",
         "ava": "female, high pitch",
-        "emma": "female, soft",
+        "emma": "female, whisper",
     }
     return mapping.get(voice_key, "")
 
@@ -175,6 +175,29 @@ class TTS:
         """Normalize and sanitize text for more stable ONNX inference."""
         normalized = unicodedata.normalize("NFKC", str(text))
 
+        # Strip structural labels from research/LLM output (e.g. 'Hook:', 'CTA:', 'Noi dung:')
+        import re as _re2
+        normalized = _re2.sub(
+            r'^(Hook|CTA|N\u1ed9i dung|Main points?|K\u1ecbch b\u1ea3n|Script|Ti\u00eau \u0111\u1ec1|Target audience|Style|Format|\u0110i\u1ec3m \d):\s*',
+            '',
+            normalized,
+            flags=_re2.MULTILINE | _re2.IGNORECASE,
+        )
+
+        # Strip hashtags (#tag) — metadata, not speakable.
+        import re as _re
+        normalized = _re.sub(r"#\S+", "", normalized)
+
+        # Strip emoji (supplementary Unicode plane — most emoji live here).
+        normalized = _re.sub(r"[𐀀-􏿿]", "", normalized, flags=_re.UNICODE)
+
+        # Strip remaining non-speakable symbol categories.
+        import unicodedata as _ud
+        normalized = "".join(
+            ch for ch in normalized
+            if _ud.category(ch) not in {"So", "Sm", "Sk", "Co", "Cs"}
+        )
+
         # Replace common typography variants with model-friendly equivalents.
         replacements = {
             "“": '"',
@@ -184,13 +207,18 @@ class TTS:
             "–": "-",
             "—": "-",
             "…": "...",
-            "\u00a0": " ",
+            " ": " ",
+            "•": "",
+            "●": "",
+            "➡": "",
+            "⭐": "",
+            "❤": "",
         }
         for src, dst in replacements.items():
             normalized = normalized.replace(src, dst)
 
-        # Remove unsupported control chars but keep Vietnamese and punctuation.
-        normalized = "".join(ch for ch in normalized if ch == "\n" or (ord(ch) >= 32 and unicodedata.category(ch) != "Cf"))
+        # Remove unsupported control chars but keep Vietnamese and standard punctuation.
+        normalized = "".join(ch for ch in normalized if ord(ch) == 10 or (ord(ch) >= 32 and unicodedata.category(ch) != "Cf"))
         normalized = re.sub(r"\s+", " ", normalized).strip()
         return normalized
 

@@ -393,6 +393,16 @@ def get_whisper_beam_size() -> int:
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
         return int(json.load(file).get("whisper_beam_size", 1))
 
+def get_enable_title_audio() -> bool:
+    """
+    Gets whether the title card audio (subject read aloud before main content) is enabled.
+
+    Returns:
+        enabled (bool): True to prepend title audio (default), False to skip it.
+    """
+    with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
+        return bool(json.load(file).get("enable_title_audio", True))
+
 def get_video_encode_preset() -> str:
     """
     Gets ffmpeg x264 preset for video encoding speed/quality tradeoff.

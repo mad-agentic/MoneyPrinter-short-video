@@ -194,23 +194,8 @@ const buildVideoPrefillFromIdea = (idea: ResearchIdeaPrefill): { subject: string
   const clean = (value: string | undefined): string => String(value || '').trim();
   const subject = clean(idea.title) || 'Untitled video idea';
 
-  const points = (idea.main_points || [])
-    .map((point) => clean(point))
-    .filter(Boolean)
-    .map((point, index) => `${index + 1}. ${point}`);
-
-  const sections: string[] = [];
-  if (clean(idea.hook)) sections.push(`Hook: ${clean(idea.hook)}`);
-  if (points.length > 0) sections.push(`Main points:\n${points.join('\n')}`);
-  if (clean(idea.script_outline)) sections.push(`Script outline:\n${clean(idea.script_outline)}`);
-  if (clean(idea.cta)) sections.push(`CTA: ${clean(idea.cta)}`);
-  if (clean(idea.target_audience)) sections.push(`Target audience: ${clean(idea.target_audience)}`);
-  if (clean(idea.format)) sections.push(`Style: ${clean(idea.format)}`);
-
-  let script = sections.join('\n\n').trim();
-  if (script.length < 30) {
-    script = `Topic: ${subject}\n\nHook: ${clean(idea.hook) || subject}\n\nShare 3 practical points with clear examples and end with a call to action.`;
-  }
+  // Only use script_outline as the TTS script — hook/main_points/CTA are metadata, not audio text
+  const script = clean(idea.script_outline) || '';
 
   return { subject, script };
 };
@@ -258,11 +243,15 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [mediaLoading, setMediaLoading] = useState(true);
   const [mediaError, setMediaError] = useState('');
+  const [galleryFilterSessionId, setGalleryFilterSessionId] = useState<string>('');
   const [activeSessionId, setActiveSessionIdRaw] = useState<string>(
     () => localStorage.getItem('mp_active_session_id') ?? ''
   );
+  const galleryFilterManualRef = useRef(false);
   const setActiveSessionId = (id: string) => {
     setActiveSessionIdRaw(id);
+    // Reset manual override so Media Engine follows the newly selected session
+    galleryFilterManualRef.current = false;
     if (id) {
       localStorage.setItem('mp_active_session_id', id);
     } else {
@@ -424,8 +413,8 @@ export default function App() {
         setMediaError('');
       }
 
-      const galleryUrl = activeSessionId
-        ? `${API}/system/gallery?session_id=${activeSessionId}`
+      const galleryUrl = galleryFilterSessionId
+        ? `${API}/system/gallery?session_id=${galleryFilterSessionId}`
         : `${API}/system/gallery`;
       Promise.all([
         fetch(galleryUrl).then((r) => {
@@ -464,11 +453,18 @@ export default function App() {
     if (reloadIntervalMs <= 0) return;
     const interval = setInterval(() => tick(false), reloadIntervalMs);
     return () => clearInterval(interval);
-  }, [activeSessionId, reloadIntervalMs]);
+  }, [galleryFilterSessionId, reloadIntervalMs]);
 
   useEffect(() => {
     setSelectedGalleryImages((prev) => prev.filter((url) => gallery.some((item) => item.url === url && item.type === 'image')));
   }, [gallery]);
+
+  // Sync Media Engine filter to active session unless user has manually overridden it
+  useEffect(() => {
+    if (!galleryFilterManualRef.current) {
+      setGalleryFilterSessionId(activeSessionId);
+    }
+  }, [activeSessionId]);
 
   const handleRenameSession = async (sessionId: string, newName: string) => {
     const res = await fetch(`${API}/system/sessions/${sessionId}/rename`, {
@@ -680,6 +676,7 @@ export default function App() {
                 prefillScript={prefillScript}
                 forceNewSessionFromPrefill={prefillForceNewSession}
                 onPrefillConsumed={() => { setPrefillSubject(''); setPrefillScript(''); setPrefillForceNewSession(false); }}
+                ttsEngine={ttsHealth?.primary_engine || 'kitten'}
               />
             )}
             {activeTab === 'settings' && <ConfigWorkspace />}
@@ -695,12 +692,25 @@ export default function App() {
             {activeTab === 'research' && (
               <div className="h-[calc(100vh-12rem)] -mx-6 lg:-mx-10 -mt-8">
                 <ResearchWorkspace
-                  onMakeVideo={(idea) => {
+                  onMakeVideo={async (idea) => {
                     const prefill = buildVideoPrefillFromIdea(idea);
-                    setActiveSessionId('');
+                    // Create a draft session immediately so it persists in the sessions list
+                    let newSessionId = '';
+                    try {
+                      const res = await fetch(`${API}/system/sessions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ subject: prefill.subject, script: prefill.script }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        newSessionId = data.session_id ?? '';
+                      }
+                    } catch { /* non-fatal — user can still proceed without a pre-created session */ }
+                    if (newSessionId) setActiveSessionId(newSessionId);
                     setPrefillSubject(prefill.subject);
                     setPrefillScript(prefill.script);
-                    setPrefillForceNewSession(true);
+                    setPrefillForceNewSession(false); // session already created
                     setActiveTab('youtube');
                   }}
                 />
@@ -719,10 +729,10 @@ export default function App() {
               <h3 className="font-bold text-slate-200 uppercase tracking-widest text-xs">Media Engine</h3>
               <div className="ml-2">
                 <select
-                  value={activeSessionId}
-                  onChange={(e) => setActiveSessionId(e.target.value)}
+                  value={galleryFilterSessionId}
+                  onChange={(e) => { galleryFilterManualRef.current = true; setGalleryFilterSessionId(e.target.value); }}
                   className="bg-slate-900/70 border border-white/10 text-slate-300 text-[11px] rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-500/40"
-                  title="Filter media by session"
+                  title="Browse media by session (does not change your active session)"
                 >
                   <option value="">All</option>
                   {sessions.map((s) => (
@@ -1113,8 +1123,11 @@ function ConfigWorkspace() {
     whisper_compute_type: 'int8',
     whisper_vad_filter: false,
     whisper_beam_size: 1,
+    tts_engine: 'kitten',
+    tts_fallback_engine: 'kitten',
     tts_voice: 'Jasper',
     tts_strict_mode: false,
+    enable_title_audio: true,
     video_encode_preset: 'veryfast',
     video_encode_crf: 24,
     script_sentence_length: 4,
@@ -1181,8 +1194,11 @@ function ConfigWorkspace() {
           whisper_compute_type: String(cfg.whisper_compute_type || 'int8'),
           whisper_vad_filter: !!cfg.whisper_vad_filter,
           whisper_beam_size: Math.max(1, Number(cfg.whisper_beam_size) || 1),
+          tts_engine: String((cfg as any).tts_engine || 'kitten'),
+          tts_fallback_engine: String((cfg as any).tts_fallback_engine || 'kitten'),
           tts_voice: String(cfg.tts_voice || 'Jasper'),
           tts_strict_mode: !!cfg.tts_strict_mode,
+          enable_title_audio: cfg.enable_title_audio !== undefined ? !!cfg.enable_title_audio : true,
           video_encode_preset: String(cfg.video_encode_preset || 'veryfast'),
           video_encode_crf: Math.min(35, Math.max(18, Number(cfg.video_encode_crf) || 24)),
           script_sentence_length: Math.max(1, Number(cfg.script_sentence_length) || 4),
@@ -1418,6 +1434,22 @@ function ConfigWorkspace() {
           </label>
 
           <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1" title="Primary TTS engine. kitten = fast/lightweight; omnivoice = high quality but requires GPU.">TTS engine</p>
+            <select value={(cfg as any).tts_engine || 'kitten'} onChange={e => setCfg(prev => ({ ...prev, tts_engine: e.target.value } as any))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
+              <option value="kitten">kitten (fast, recommended)</option>
+              <option value="omnivoice">omnivoice (high quality, needs GPU)</option>
+            </select>
+          </label>
+
+          <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1" title="Fallback TTS engine if primary fails.">TTS fallback engine</p>
+            <select value={(cfg as any).tts_fallback_engine || 'kitten'} onChange={e => setCfg(prev => ({ ...prev, tts_fallback_engine: e.target.value } as any))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
+              <option value="kitten">kitten</option>
+              <option value="omnivoice">omnivoice</option>
+            </select>
+          </label>
+
+          <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1" title="Default voice used for text-to-speech.">TTS voice</p>
             <select value={cfg.tts_voice} onChange={e => setCfg(prev => ({ ...prev, tts_voice: e.target.value }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" title="Applies to new generation runs.">
               <option value="Jasper">Jasper</option>
@@ -1473,6 +1505,14 @@ function ConfigWorkspace() {
           <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1" title="Beam size controls subtitle search depth. Higher = better quality but slower.">Whisper beam size</p>
             <input type="number" min={1} max={5} value={cfg.whisper_beam_size} onChange={e => setCfg(prev => ({ ...prev, whisper_beam_size: Number(e.target.value) }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" title="Recommended for speed: 1. For quality: 2-3." />
+          </label>
+
+          <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3 flex items-center justify-between cursor-pointer" title="When enabled, the video subject is read aloud as a title card before the main audio.">
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">Title audio intro</p>
+              <p className="text-xs text-slate-400 mt-0.5">Read subject aloud at start of video</p>
+            </div>
+            <input type="checkbox" checked={!!cfg.enable_title_audio} onChange={e => setCfg(prev => ({ ...prev, enable_title_audio: e.target.checked }))} className="w-4 h-4 accent-cyan-500" />
           </label>
 
           <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
@@ -1979,6 +2019,7 @@ function YouTubeWorkspace({
   prefillScript = '',
   forceNewSessionFromPrefill = false,
   onPrefillConsumed,
+  ttsEngine = 'kitten',
 }: {
   activeSessionId: string;
   reloadIntervalMs: number;
@@ -1988,6 +2029,7 @@ function YouTubeWorkspace({
   prefillScript?: string;
   forceNewSessionFromPrefill?: boolean;
   onPrefillConsumed?: () => void;
+  ttsEngine?: string;
 }) {
   const [accounts, setAccounts] = useState<YouTubeAccount[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
@@ -2046,21 +2088,14 @@ function YouTubeWorkspace({
   const [sessionSyncError, setSessionSyncError] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [savingSection, setSavingSection] = useState<'' | 'subject' | 'script' | 'metadata'>('');
-  // Flag: auto-trigger generate once prefill state settles
-  const autoGeneratePendingRef = useRef(false);
-  const pendingIdeaPrefillRef = useRef<{ subject: string; script: string } | null>(null);
   const pendingIdeaForceNewSessionRef = useRef(false);
-  const autoGenerateBlockedToastShownRef = useRef(false);
+  const pendingTranslatePrefillRef = useRef(false);
   const workspaceTopRef = useRef<HTMLDivElement>(null);
 
-  // Step 1 — Apply prefill from Research workspace, schedule auto-generate
+  // Apply prefill from Research workspace — fill Subject + Script, stay at Script step for review
   useEffect(() => {
     if (!prefillSubject && !prefillScript) return;
     const targetSessionKey = activeSessionId || sessionId || DRAFT_SESSION_KEY;
-    pendingIdeaPrefillRef.current = {
-      subject: String(prefillSubject || '').trim(),
-      script: String(prefillScript || '').trim(),
-    };
     pendingIdeaForceNewSessionRef.current = Boolean(forceNewSessionFromPrefill);
     if (prefillSubject) {
       setCustomSubject(prefillSubject);
@@ -2070,17 +2105,75 @@ function YouTubeWorkspace({
       setCustomScript(prefillScript);
       setCustomScriptDirtySessionKey(targetSessionKey);
     }
-    autoGeneratePendingRef.current = true;
-    autoGenerateBlockedToastShownRef.current = false;
-    showToast('💡 Đã nhận idea, đang chuẩn bị auto-generate video...');
+    // If kitten engine, schedule auto-translate to English once account is ready
+    if (ttsEngine === 'kitten') {
+      pendingTranslatePrefillRef.current = true;
+    }
+    showToast('💡 Idea đã điền vào Script. Hãy review và chỉnh sửa script trước khi Generate.');
     onPrefillConsumed?.();
-    // Scroll to top so user sees the filled fields + progress
     setTimeout(() => workspaceTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillSubject, prefillScript, forceNewSessionFromPrefill, activeSessionId, sessionId]);
 
+  // KittenTTS only supports English — auto-force English when engine is kitten
+  useEffect(() => {
+    if (ttsEngine === 'kitten') {
+      setScriptLanguage('english');
+      setTtsVoice(prev => {
+        const englishVoices = LANGUAGE_VOICE_MAP['english'] || VOICE_OPTIONS;
+        return englishVoices.includes(prev) ? prev : englishVoices[0];
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ttsEngine]);
+
+  const effectiveSessionId = activeSessionId || sessionId;
+  const currentSessionKey = effectiveSessionId || DRAFT_SESSION_KEY;
+  const preferredAccountId = selectedAccountId || accounts[0]?.id || '';
+
+  // Auto-translate prefilled script to English when kitten engine is active
+  useEffect(() => {
+    if (!pendingTranslatePrefillRef.current) return;
+    if (!preferredAccountId || !customScript.trim()) return;
+    pendingTranslatePrefillRef.current = false;
+    setTranslatingScript(true);
+    showToast('🌐 KittenTTS chỉ hỗ trợ tiếng Anh — đang tự dịch script...');
+    fetch(`${API}/youtube/${preferredAccountId}/translate-script`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script: customScript, target_language: 'english', resume_session_id: effectiveSessionId }),
+    })
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data?.detail || 'Translation failed');
+        setCustomScript(data.translated ?? '');
+        showToast('✅ Script đã dịch sang tiếng Anh cho KittenTTS.');
+      })
+      .catch(() => showToast('⚠️ Auto-translate thất bại. Hãy dịch thủ công bằng nút Translate.'))
+      .finally(() => setTranslatingScript(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferredAccountId, customScript]);
+
   const currentExtraScript = String(customScript || audioTextPreview || '');
-  const normalizedAudioText = currentExtraScript.replace(/\s+/g, ' ').trim();
+  const normalizedAudioText = currentExtraScript
+    // Strip stage-direction labels: optional "→" + "Label: (description in parens)"
+    .replace(/→?\s*[A-Z][A-Za-z]*(?:\s+[A-Za-z]+)*:\s*\([^)]*\)\s*/g, '')
+    // Strip remaining → arrows
+    .replace(/→\s*/g, '')
+    // Replace X/Y fractions / ratings with "X out of Y" so TTS doesn't say "slash"
+    .replace(/\b(\d+)\s*\/\s*(\d+)\b/g, '$1 out of $2')
+    // Replace remaining "/" separators with a comma space
+    .replace(/\s*\/\s*/g, ', ')
+    // Fix B-roll → "B roll" so TTS reads it cleanly
+    .replace(/\bB-roll\b/gi, 'B roll')
+    // Strip markdown bold/italic asterisks
+    .replace(/\*+([^*]+)\*+/g, '$1')
+    // Strip markdown headers (#)
+    .replace(/^#+\s*/gm, '')
+    // Strip bullet dashes at line start
+    .replace(/^\s*[-–—]\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   // Draft CC: split script into subtitle-sized lines instantly, no API needed
   const draftCcFromText = useMemo(() => {
@@ -2098,9 +2191,6 @@ function YouTubeWorkspace({
     return sentences.join('\n');
   }, [normalizedAudioText]);
 
-  const effectiveSessionId = activeSessionId || sessionId;
-  const currentSessionKey = effectiveSessionId || DRAFT_SESSION_KEY;
-  const preferredAccountId = selectedAccountId || accounts[0]?.id || '';
   const mappedActiveSessionStep = mapStageToProgressStep(activeSessionStage);
   const progressFloorActive = progressFloorSessionKey === currentSessionKey ? progressFloorStep : '';
   const effectiveProgressStep = (() => {
@@ -2562,58 +2652,6 @@ function YouTubeWorkspace({
       .finally(() => setLoading(false));
   };
 
-  // Step 2 — Run auto-generate once prefill from Research is ready and valid.
-  useEffect(() => {
-    if (!autoGeneratePendingRef.current) return;
-
-    const pendingPrefill = pendingIdeaPrefillRef.current;
-    if (pendingPrefill) {
-      if (!customSubject.trim() && pendingPrefill.subject) {
-        setCustomSubject(pendingPrefill.subject);
-        setCustomSubjectDirtySessionKey(currentSessionKey);
-        return;
-      }
-      if (!normalizedAudioText && pendingPrefill.script) {
-        setCustomScript(pendingPrefill.script);
-        setCustomScriptDirtySessionKey(currentSessionKey);
-        return;
-      }
-    }
-
-    if (isGenerateBlocked || loading) {
-      if (!autoGenerateBlockedToastShownRef.current && generationWarnings.length > 0) {
-        autoGenerateBlockedToastShownRef.current = true;
-        showToast(`⚠️ Auto-generate chưa chạy: ${generationWarnings[0]}`);
-      }
-      return;
-    }
-
-    showToast('🚀 Đang auto-generate video từ idea...');
-    autoGeneratePendingRef.current = false;
-    pendingIdeaPrefillRef.current = null;
-    autoGenerateBlockedToastShownRef.current = false;
-    handleGenerate();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    isGenerateBlocked,
-    loading,
-    generationWarnings,
-    preferredAccountId,
-    customSubject,
-    normalizedAudioText,
-    currentSessionKey,
-    effectiveSessionId,
-    publishMode,
-    autoPushSocial,
-    isForKids,
-    titleOverride,
-    descriptionOverride,
-    tagsOverride,
-    ttsVoice,
-    scriptLanguage,
-    englishCcBottom,
-    enableCc,
-  ]);
 
   const handleAutoGenerateAudioText = () => {
     const accountId = preferredAccountId;
@@ -2653,6 +2691,14 @@ function YouTubeWorkspace({
         setAudioTextPreview(generatedScript);
         setPromptTrace(data?.prompt_trace || '');
         showToast('✅ Audio text generated. Review and edit before Generate Short.');
+        // Auto-save script to session if a session is active
+        if (effectiveSessionId) {
+          fetch(`${API}/youtube/sessions/${effectiveSessionId}/meta`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ script: generatedScript }),
+          }).catch(() => {/* silent */});
+        }
       })
       .catch((err) => showToast(`❌ ${err?.message || 'Failed to generate audio text.'}`))
       .finally(() => setGeneratingAudioText(false));

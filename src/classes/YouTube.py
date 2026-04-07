@@ -827,6 +827,23 @@ class YouTube:
         session_id = self._session.session_id if self._session else "unknown"
         info(f"\n🎙️  [Session {session_id}] === STAGE: TEXT-TO-SPEECH ===")
         
+        # Clean script of TTS-unfriendly characters before cache lookup
+        # Remove stage-direction labels: "Label: (description)" optionally preceded by →
+        self.script = re.sub(r'→?\s*[A-Z][A-Za-z]*(?:\s+[A-Za-z]+)*:\s*\([^)]*\)\s*', '', self.script)
+        # Remove remaining → arrows
+        self.script = re.sub(r'→\s*', '', self.script)
+        # X/Y fractions → "X out of Y" (avoids TTS saying "slash")
+        self.script = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1 out of \2', self.script)
+        # Remaining "/" separators → ", "
+        self.script = re.sub(r'\s*/\s*', ', ', self.script)
+        # B-roll → "B roll" so TTS pronounces it cleanly
+        self.script = re.sub(r'\bB-roll\b', 'B roll', self.script, flags=re.IGNORECASE)
+        # Strip markdown bold/italic asterisks
+        self.script = re.sub(r'\*+([^*]+)\*+', r'\1', self.script)
+        # Strip markdown headers
+        self.script = re.sub(r'^#+\s*', '', self.script, flags=re.MULTILINE)
+        # Strip leading bullet dashes
+        self.script = re.sub(r'^\s*[-–—]\s+', '', self.script, flags=re.MULTILINE)
         # Normalise whitespace before cache lookup
         self.script = re.sub(r"\s+", " ", self.script).strip()
         self.voice_used = tts_instance.voice_name
@@ -1143,10 +1160,11 @@ class YouTube:
                 compute_type=compute_type,
             )
             info("    Whisper model ready. Starting transcription...")
+            info("    ⏳ Detecting language from audio (may take 30–120s on CPU)...")
 
             # Pass the account language so Whisper does not mis-detect
             # Vietnamese (or other non-English languages) as English.
-            segments, _ = model.transcribe(
+            segments, trans_info = model.transcribe(
                 audio_path,
                 language=whisper_language_for_run,
                 vad_filter=get_whisper_vad_filter(),
@@ -1154,9 +1172,18 @@ class YouTube:
                 best_of=1,
                 task=task_name,
             )
+            detected_lang = getattr(trans_info, 'language', 'unknown')
+            lang_prob = getattr(trans_info, 'language_probability', 0)
+            audio_dur = getattr(trans_info, 'duration', 0)
+            info(
+                f"    ✅ Language detected: {detected_lang} ({lang_prob:.0%}) | "
+                f"Audio: {audio_dur:.1f}s | Init took: {time.time()-started_at:.1f}s"
+            )
+            info("    🔄 Iterating subtitle segments...")
 
             lines = []
             emitted_segments = 0
+            last_log_time = time.time()
             for idx, segment in enumerate(segments, start=1):
                 start = self._format_srt_timestamp(segment.start)
                 end = self._format_srt_timestamp(segment.end)
@@ -1166,8 +1193,10 @@ class YouTube:
                     continue
 
                 emitted_segments += 1
-                if emitted_segments == 1 or emitted_segments % 20 == 0:
-                    info(f"    Whisper progress: {emitted_segments} subtitle segment(s) parsed...")
+                now = time.time()
+                if emitted_segments == 1 or now - last_log_time >= 10:
+                    info(f"    Whisper progress: {emitted_segments} segment(s) | {now-started_at:.0f}s elapsed...")
+                    last_log_time = now
 
                 lines.append(str(idx))
                 lines.append(f"{start} --> {end}")
@@ -1669,9 +1698,11 @@ class YouTube:
 
         # Generate title card audio (subject read aloud before main content)
         _check_cancel("title_audio")
-        if self.subject:
+        if self.subject and get_enable_title_audio():
             info(f"\n🎙️  [Session {session_id}] === STAGE: TITLE AUDIO ===")
             self._generate_title_audio(tts_instance)
+        elif self.subject and not get_enable_title_audio():
+            info(f"⏭️  Title audio disabled by config — skipping.")
 
         # Combine everything
         _check_cancel("video_composition")
