@@ -221,6 +221,8 @@ class RenameBody(BaseModel):
 
 class CreateSessionBody(BaseModel):
     name: str = ""
+    subject: str = ""
+    script: str = ""
 
 
 class ConfigUpdateBody(BaseModel):
@@ -229,7 +231,10 @@ class ConfigUpdateBody(BaseModel):
 
 @app.post("/system/sessions")
 def create_new_session(body: CreateSessionBody):
-    session = create_session(body.name.strip())
+    name = body.name.strip() or body.subject.strip()[:40] or "draft"
+    session = create_session(name)
+    if body.subject.strip() or body.script.strip():
+        session.save_stage("init", subject=body.subject.strip(), script=body.script.strip())
     return session.meta
 
 @app.patch("/system/sessions/{session_id}/rename")
@@ -263,7 +268,7 @@ EDITABLE_CONFIG_KEYS = {
     "tts_voice",
     "tts_strict_mode",
     "tts_engine",
-    "tts_engine_fallback",
+    "tts_fallback_engine",
     "tts_language",
     "tts_sample_rate",
     "omnivoice_model",

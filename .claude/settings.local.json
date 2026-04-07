@@ -5,7 +5,13 @@
       "Bash(\"venv/Scripts/pip.exe\" install:*)",
       "Bash(\"venv/Scripts/python.exe\" -c \"from duckduckgo_search import DDGS; print\\(''duckduckgo_search OK''\\)\")",
       "Bash(\"..\\\\venv\\\\Scripts\\\\python.exe\" -c \":*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(python -c \":*)",
+      "Bash(\"venv/Scripts/python.exe\" -c \"import ast; ast.parse\\(open\\(''src/classes/Tts.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''OK - no syntax errors''\\)\")",
+      "Bash(python:*)",
+      "Bash(grep -rn \"Media Engine\\\\|mediaEngine\\\\|media_engine\\\\|MEDIA\" \"C:\\\\Users\\\\admin\\\\Desktop\\\\_AI\\\\MoneyPrinter-short-video\\\\frontend\\\\src\"\" --include=\"*.tsx\" --include=\"*.ts \" -l)",
+      "Bash(ls \"C:/Users/admin/Desktop/_AI/MoneyPrinter-short-video/\"*.md)",
+      "Bash(dir \"C:\\\\Users\\\\admin\\\\Desktop\\\\_AI\\\\MoneyPrinter-short-video\\\\*.md\")"
     ]
   }
 }
