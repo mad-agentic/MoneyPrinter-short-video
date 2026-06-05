@@ -12,3 +12,4 @@ auto.sh
 .env
 /frontend/node_modules
 refs/
+/docs/superpowers

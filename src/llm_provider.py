@@ -7,6 +7,7 @@ from config import (
     get_openai_base_url,
     get_openai_model,
     get_openai_api_key,
+    get_ninerouter_config,
 )
 
 _selected_model: str | None = None
@@ -120,7 +121,12 @@ def ensure_model_selected(model_name: str | None = None) -> str:
     models = list_models()
 
     if backend == "openai_compatible":
-        configured_model = (get_openai_model() or "").strip()
+        try:
+            from providers.registry import is_ninerouter_active
+            nr_model = str(get_ninerouter_config().get("chat_model", "") or "").strip() if is_ninerouter_active() else ""
+        except Exception:
+            nr_model = ""
+        configured_model = nr_model or (get_openai_model() or "").strip()
         if configured_model:
             _selected_model = configured_model
             return _selected_model

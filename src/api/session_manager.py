@@ -16,6 +16,7 @@ import json
 import os
 import re
 import time
+import unicodedata
 from uuid import uuid4
 from typing import Optional
 
@@ -44,9 +45,19 @@ def _random_session_name() -> str:
 
 def _slugify_folder_name(name: str) -> str:
     raw = (name or "session").strip().lower()
+    raw = raw.replace("đ", "d").replace("Đ", "d")
+    raw = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^a-z0-9._-]+", "-", raw)
     slug = re.sub(r"-+", "-", slug).strip("-._")
     return slug or "session"
+
+def _display_name_for_meta(meta: dict) -> str:
+    name = str(meta.get("name", "") or "").strip()
+    folder_name = str(meta.get("folder_name", "") or "").strip()
+    subject = str(meta.get("subject", "") or "").strip()
+    if subject and (not name or name == folder_name):
+        return subject
+    return name or subject or folder_name
 
 
 def _session_subdirs() -> list[str]:
@@ -159,12 +170,13 @@ class SessionManager:
 
     def __init__(self, session_id: str, initial_name: str = ""):
         self.session_id = session_id
+        display_name = (initial_name or "").strip()
         existing_dir = _find_session_dir_by_id(session_id)
 
         if existing_dir:
             self.session_dir = existing_dir
         else:
-            base_name = (initial_name or "").strip() or _random_session_name()
+            base_name = display_name or _random_session_name()
             folder_name = _unique_session_dir_name(base_name)
             self.session_dir = os.path.join(_sessions_dir(), folder_name)
 
@@ -194,6 +206,8 @@ class SessionManager:
                 self._save_meta()
         else:
             self.meta = self._build_default_meta(session_id)
+            if display_name:
+                self.meta["name"] = display_name
             self._save_meta()
 
     # ── Persistence ────────────────────────────────────────────────────────
@@ -347,7 +361,11 @@ def list_sessions() -> list:
         if os.path.exists(meta_path):
             try:
                 with open(meta_path, "r", encoding="utf-8") as f:
-                    result.append(json.load(f))
+                    meta = json.load(f)
+                    display_name = _display_name_for_meta(meta)
+                    if display_name:
+                        meta["name"] = display_name
+                    result.append(meta)
             except Exception:
                 pass
     result.sort(key=lambda x: x.get("created_at", ""), reverse=True)

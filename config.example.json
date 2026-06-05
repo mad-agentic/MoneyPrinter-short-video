@@ -8,6 +8,30 @@
   "openai_base_url": "http://localhost:20128/v1",
   "openai_model": "",
   "openai_api_key": "none",
+  "ai_provider": {
+    "active": "",
+    "fallback_to_local": true
+  },
+  "providers": {
+    "ninerouter": {
+      "enabled": false,
+      "base_url": "http://localhost:20128",
+      "api_key": "none",
+      "chat_model": "cx/gpt-5.5",
+      "image_model": "gemini/gemini-3-pro-image-preview",
+      "image_size": "1024x1792",
+      "tts_model": "edge-tts/vi-VN-HoaiMyNeural",
+      "tts_voice": "vi-VN-HoaiMyNeural",
+      "tts_response_format": "wav",
+      "stt_model": "gemini/gemini-2.5-flash",
+      "stt_response_format": "srt",
+      "search_model": "search-combo",
+      "search_max_results": 10
+    },
+    "local": {
+      "enabled": true
+    }
+  },
   "twitter_language": "English",
   "nanobanana2_api_base_url": "https://generativelanguage.googleapis.com/v1beta",
   "nanobanana2_api_key": "",

@@ -53,8 +53,8 @@ class DedupLoggingMiddleware(BaseHTTPMiddleware):
         # Dedup logging
         if log_msg != DedupLoggingMiddleware._last_log:
             if DedupLoggingMiddleware._last_log is not None and DedupLoggingMiddleware._count > 1:
-                print(f"  ⏺️  [previous log repeated {DedupLoggingMiddleware._count - 1} more times]", flush=True)
-            print(f"ℹ️  {log_msg}", flush=True)
+                print(f"  [repeat] previous log repeated {DedupLoggingMiddleware._count - 1} more times", flush=True)
+            print(f"[info] {log_msg}", flush=True)
             DedupLoggingMiddleware._last_log = log_msg
             DedupLoggingMiddleware._count = 1
         else:
@@ -234,7 +234,7 @@ def create_new_session(body: CreateSessionBody):
     name = body.name.strip() or body.subject.strip()[:40] or "draft"
     session = create_session(name)
     if body.subject.strip() or body.script.strip():
-        session.save_stage("init", subject=body.subject.strip(), script=body.script.strip())
+        session.save_stage("init", name=name, subject=body.subject.strip(), script=body.script.strip())
     return session.meta
 
 @app.patch("/system/sessions/{session_id}/rename")
@@ -265,6 +265,7 @@ EDITABLE_CONFIG_KEYS = {
     "whisper_compute_type",
     "whisper_vad_filter",
     "whisper_beam_size",
+    "enable_title_audio",
     "tts_voice",
     "tts_strict_mode",
     "tts_engine",
@@ -286,13 +287,15 @@ EDITABLE_CONFIG_KEYS = {
     "openai_api_key",
     "ollama_base_url",
     "ollama_model",
+    "ai_provider",
+    "providers",
 }
 
 
 def _read_config() -> dict[str, Any]:
     if not os.path.exists(CONFIG_PATH):
         raise HTTPException(status_code=500, detail="config.json not found")
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
         return dict(json.load(f))
 
 
@@ -363,6 +366,87 @@ def get_llm_models():
 
 
 # ── Accounts ─────────────────────────────────────────────────────────────────
+
+@app.get("/system/ai/models/chat")
+def get_ai_chat_models():
+    try:
+        from providers.registry import get_ninerouter, is_ninerouter_active
+        if is_ninerouter_active():
+            return {"provider": "ninerouter", "models": get_ninerouter().list_chat_models()}
+        from llm_provider import list_models
+        return {"provider": "llm", "models": list_models()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/system/ai/models/image")
+def get_ai_image_models():
+    try:
+        from providers.registry import get_ninerouter, is_ninerouter_active
+        if not is_ninerouter_active():
+            return {"provider": "local", "models": []}
+        return {"provider": "ninerouter", "models": get_ninerouter().list_image_models()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/system/ai/models/web")
+def get_ai_web_models():
+    try:
+        from providers.registry import get_ninerouter, is_ninerouter_active
+        if not is_ninerouter_active():
+            return {"provider": "local", "models": []}
+        return {"provider": "ninerouter", "models": get_ninerouter().list_web_models()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/system/ai/models/tts")
+def get_ai_tts_models():
+    try:
+        from providers.registry import get_ninerouter, is_ninerouter_active
+        if not is_ninerouter_active():
+            return {"provider": "local", "models": []}
+        return {"provider": "ninerouter", "models": get_ninerouter().list_tts_models()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/system/ai/models/stt")
+def get_ai_stt_models():
+    try:
+        from providers.registry import get_ninerouter, is_ninerouter_active
+        if not is_ninerouter_active():
+            return {"provider": "local", "models": []}
+        return {"provider": "ninerouter", "models": get_ninerouter().list_stt_models()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/system/ai/models/info")
+def get_ai_model_info(id: str):
+    try:
+        from providers.registry import get_ninerouter, is_ninerouter_active
+        if not is_ninerouter_active():
+            return {"provider": "local", "info": {}}
+        return {"provider": "ninerouter", "info": get_ninerouter().get_model_info(id)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/system/ai/voices")
+def get_ai_voices(provider: str = "edge-tts", lang: str = ""):
+    try:
+        from providers.registry import get_ninerouter, is_ninerouter_active
+        if not is_ninerouter_active():
+            return {"provider": "local", "voices": []}
+        return {"provider": "ninerouter", "voices": get_ninerouter().list_voices(provider, lang)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/system/ai/models/embedding")
+def get_ai_embedding_models():
+    try:
+        from providers.registry import get_ninerouter, is_ninerouter_active
+        if not is_ninerouter_active():
+            return {"provider": "local", "models": []}
+        return {"provider": "ninerouter", "models": get_ninerouter().list_embedding_models()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 @app.get("/accounts/{platform}")
 def get_platform_accounts(platform: str):

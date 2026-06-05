@@ -4,15 +4,48 @@ import ResearchWorkspace from './ResearchWorkspace';
 
 const API = 'http://127.0.0.1:15001';
 const DRAFT_SESSION_KEY = '__draft__';
-const VOICE_OPTIONS = ['Jasper', 'Luna', 'Milo', 'Ava', 'Emma'];
+const VOICE_OPTIONS = ['Jasper', 'Luna', 'Milo', 'Ava', 'Emma', 'vi-VN-HoaiMyNeural', 'vi-VN-NamMinhNeural'];
+const VIETNAMESE_TTS_VOICES = ['vi-VN-HoaiMyNeural', 'vi-VN-NamMinhNeural'];
 const SCRIPT_LANGUAGE_OPTIONS = [
   { value: 'english', label: 'English' },
   { value: 'vietnamese', label: 'Vietnamese' },
 ] as const;
 const LANGUAGE_VOICE_MAP: Record<string, string[]> = {
-  vietnamese: ['Jasper', 'Milo', 'Luna'],
+  vietnamese: VIETNAMESE_TTS_VOICES,
   english: ['Luna', 'Ava', 'Emma'],
 };
+const GEMINI_TTS_VOICES = [
+  'Zephyr',
+  'Puck',
+  'Charon',
+  'Kore',
+  'Fenrir',
+  'Leda',
+  'Orus',
+  'Aoede',
+  'Callirrhoe',
+  'Autonoe',
+  'Enceladus',
+  'Iapetus',
+  'Umbriel',
+  'Algieba',
+  'Despina',
+  'Erinome',
+  'Algenib',
+  'Rasalgethi',
+  'Laomedeia',
+  'Achernar',
+  'Alnilam',
+  'Schedar',
+  'Gacrux',
+  'Pulcherrima',
+  'Achird',
+  'Zubenelgenubi',
+  'Vindemiatrix',
+  'Sadachbia',
+  'Sadaltager',
+  'Sulafat',
+];
 const GENERATION_STEPS = [
   { id: 'script', label: 'Script Setup', icon: '📝' },
   { id: 'images', label: 'Generate Images', icon: '🖼️' },
@@ -1110,8 +1143,23 @@ function ConfigWorkspace() {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchingImageModels, setFetchingImageModels] = useState(false);
+  const [fetchingTtsModels, setFetchingTtsModels] = useState(false);
+  const [fetchingSttModels, setFetchingSttModels] = useState(false);
+  const [fetchingVoices, setFetchingVoices] = useState(false);
+  const [fetchingWebModels, setFetchingWebModels] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [availableImageModels, setAvailableImageModels] = useState<string[]>([]);
+  const [availableTtsModels, setAvailableTtsModels] = useState<string[]>([]);
+  const [availableSttModels, setAvailableSttModels] = useState<string[]>([]);
+  const [availableVoices, setAvailableVoices] = useState<string[]>([]);
+  const [availableWebModels, setAvailableWebModels] = useState<string[]>([]);
   const [modelsError, setModelsError] = useState('');
+  const [imageModelsError, setImageModelsError] = useState('');
+  const [ttsModelsError, setTtsModelsError] = useState('');
+  const [sttModelsError, setSttModelsError] = useState('');
+  const [voicesError, setVoicesError] = useState('');
+  const [webModelsError, setWebModelsError] = useState('');
   const [cfg, setCfg] = useState({
     verbose: false,
     headless: false,
@@ -1138,6 +1186,25 @@ function ConfigWorkspace() {
     openai_base_url: 'http://localhost:20128/v1',
     openai_model: '',
     openai_api_key: 'none',
+    ai_provider: { active: '', fallback_to_local: true },
+    providers: {
+      ninerouter: {
+        enabled: false,
+        base_url: 'http://localhost:20128',
+        api_key: 'none',
+        chat_model: 'cx/gpt-5.5',
+        image_model: 'gemini/gemini-3-pro-image-preview',
+        image_size: '1024x1792',
+        tts_model: 'edge-tts/vi-VN-HoaiMyNeural',
+        tts_voice: 'vi-VN-HoaiMyNeural',
+        tts_response_format: 'wav',
+        stt_model: 'gemini/gemini-2.5-flash',
+        stt_response_format: 'srt',
+        search_model: 'search-combo',
+        search_max_results: 10,
+      },
+      local: { enabled: true },
+    },
   });
 
   const fetchConfig = async () => {
@@ -1178,10 +1245,152 @@ function ConfigWorkspace() {
     }
   };
 
+  const fetchAvailableImageModels = async () => {
+    setFetchingImageModels(true);
+    setImageModelsError('');
+    try {
+      const res = await fetch(`${API}/system/ai/models/image`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || 'Failed to fetch image models');
+      setAvailableImageModels(data.models || []);
+      if ((data.models || []).length === 0) {
+        setImageModelsError('No image models found. Make sure 9Router is running and enabled.');
+      }
+    } catch (err) {
+      setImageModelsError((err as Error)?.message || 'Could not connect to 9Router image models.');
+      setAvailableImageModels([]);
+    } finally {
+      setFetchingImageModels(false);
+    }
+  };
+
+  const fetchAvailableTtsModels = async () => {
+    setFetchingTtsModels(true);
+    setTtsModelsError('');
+    try {
+      const res = await fetch(`${API}/system/ai/models/tts`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || 'Failed to fetch TTS models');
+      const models = data.models || [];
+      setAvailableTtsModels(models);
+      if (models.length === 0) {
+        setTtsModelsError('No TTS models found. Check 9Router TTS providers.');
+      } else if (!models.includes(String(nrCfg.tts_model || ''))) {
+        updateNineRouter({ tts_model: models[0] });
+      }
+    } catch (err) {
+      setTtsModelsError((err as Error)?.message || 'Could not connect to 9Router TTS models.');
+      setAvailableTtsModels([]);
+    } finally {
+      setFetchingTtsModels(false);
+    }
+  };
+
+  const fetchAvailableSttModels = async () => {
+    setFetchingSttModels(true);
+    setSttModelsError('');
+    try {
+      const res = await fetch(`${API}/system/ai/models/stt`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || 'Failed to fetch STT models');
+      const models = data.models || [];
+      setAvailableSttModels(models);
+      if (models.length === 0) {
+        setSttModelsError('No STT models found. Check 9Router speech-to-text providers.');
+      } else if (!models.includes(String(nrCfg.stt_model || ''))) {
+        updateNineRouter({ stt_model: models[0] });
+      }
+    } catch (err) {
+      setSttModelsError((err as Error)?.message || 'Could not connect to 9Router STT models.');
+      setAvailableSttModels([]);
+    } finally {
+      setFetchingSttModels(false);
+    }
+  };
+
+  const fetchAvailableVoices = async () => {
+    setFetchingVoices(true);
+    setVoicesError('');
+    try {
+      const ttsModel = String(nrCfg.tts_model || 'edge-tts/vi-VN-HoaiMyNeural');
+      const currentVoice = String(nrCfg.tts_voice || '');
+      if (ttsModel.toLowerCase().startsWith('gemini/')) {
+        setAvailableVoices(GEMINI_TTS_VOICES);
+        if (!GEMINI_TTS_VOICES.includes(currentVoice)) {
+          updateNineRouter({ tts_voice: 'Zephyr' });
+        }
+        return;
+      }
+      const provider = ttsModel.includes('/') ? ttsModel.split('/')[0] : 'edge-tts';
+      const lang = currentVoice.toLowerCase().startsWith('vi') || ttsModel.toLowerCase().includes('/vi') ? 'vi' : '';
+      const query = new URLSearchParams({ provider, ...(lang ? { lang } : {}) });
+      const res = await fetch(`${API}/system/ai/voices?${query.toString()}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || 'Failed to fetch voices');
+      const voices = data.voices || [];
+      setAvailableVoices(voices);
+      if (voices.length === 0) {
+        setVoicesError('No voices found for this TTS provider. You can still enter a voice manually.');
+      } else if (!voices.includes(currentVoice)) {
+        updateNineRouter({ tts_voice: voices[0] });
+      }
+    } catch (err) {
+      setVoicesError((err as Error)?.message || 'Could not connect to 9Router voices.');
+      setAvailableVoices([]);
+    } finally {
+      setFetchingVoices(false);
+    }
+  };
+
+  const fetchAvailableWebModels = async () => {
+    setFetchingWebModels(true);
+    setWebModelsError('');
+    try {
+      const res = await fetch(`${API}/system/ai/models/web`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || 'Failed to fetch web models');
+      const models = data.models || [];
+      setAvailableWebModels(models);
+      if (models.length === 0) {
+        setWebModelsError('No web search models found. Check 9Router search providers.');
+      } else if (!models.includes(String(nrCfg.search_model || ''))) {
+        updateNineRouter({ search_model: models.includes('search-combo') ? 'search-combo' : models[0] });
+      }
+    } catch (err) {
+      setWebModelsError((err as Error)?.message || 'Could not connect to 9Router web models.');
+      setAvailableWebModels([]);
+    } finally {
+      setFetchingWebModels(false);
+    }
+  };
+
   const saveConfig = async () => {
     setSaving(true);
     setSaveMsg('');
     try {
+      const currentProviders = (cfg as any).providers || {};
+      const currentNineRouter = currentProviders.ninerouter || {};
+      const openaiBase = String(cfg.openai_base_url || 'http://localhost:20128/v1').replace(/\/+$/, '');
+      const openaiNrBase = openaiBase.replace(/\/v1$/, '') || 'http://localhost:20128';
+      const currentNrBase = String(currentNineRouter.base_url || '').replace(/\/+$/, '');
+      const ninerouterBase = (!currentNrBase || currentNrBase === 'http://localhost:20128') ? openaiNrBase : currentNrBase;
+      const currentNrKey = String(currentNineRouter.api_key || '').trim();
+      const currentNrChat = String(currentNineRouter.chat_model || '').trim();
+      const ninerouterConfig = {
+        enabled: cfg.llm_backend === 'openai_compatible',
+        base_url: ninerouterBase,
+        api_key: (!currentNrKey || currentNrKey === 'none') ? String(cfg.openai_api_key || 'none') : currentNrKey,
+        chat_model: currentNrChat || String(cfg.openai_model || ''),
+        image_model: String(currentNineRouter.image_model || 'gemini/gemini-3-pro-image-preview'),
+        image_size: String(currentNineRouter.image_size || '1024x1792'),
+        tts_model: String(currentNineRouter.tts_model || 'edge-tts/vi-VN-HoaiMyNeural'),
+        tts_voice: String(currentNineRouter.tts_voice || 'vi-VN-HoaiMyNeural'),
+        tts_response_format: String(currentNineRouter.tts_response_format || 'wav'),
+        stt_model: String(currentNineRouter.stt_model || 'gemini/gemini-2.5-flash'),
+        stt_response_format: String(currentNineRouter.stt_response_format || 'srt'),
+        search_model: String(currentNineRouter.search_model || 'search-combo'),
+        search_max_results: Math.max(1, Number(currentNineRouter.search_max_results) || 10),
+      };
       const payload = {
         values: {
           verbose: !!cfg.verbose,
@@ -1209,6 +1418,15 @@ function ConfigWorkspace() {
           openai_base_url: String(cfg.openai_base_url || 'http://localhost:20128/v1'),
           openai_model: String(cfg.openai_model || ''),
           openai_api_key: String(cfg.openai_api_key || 'none'),
+          ai_provider: {
+            active: cfg.llm_backend === 'openai_compatible' ? 'ninerouter' : '',
+            fallback_to_local: !!((cfg as any).ai_provider?.fallback_to_local ?? true),
+          },
+          providers: {
+            ...currentProviders,
+            ninerouter: ninerouterConfig,
+            local: { enabled: true },
+          },
         },
       };
 
@@ -1226,6 +1444,30 @@ function ConfigWorkspace() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const nrCfg = ((cfg as any).providers?.ninerouter || {}) as Record<string, any>;
+  const updateNineRouter = (patch: Record<string, any>) => {
+    setCfg(prev => ({
+      ...prev,
+      providers: {
+        ...((prev as any).providers || {}),
+        ninerouter: {
+          ...(((prev as any).providers || {}).ninerouter || {}),
+          ...patch,
+        },
+        local: { enabled: true },
+      },
+    } as any));
+  };
+  const updateAiProvider = (patch: Record<string, any>) => {
+    setCfg(prev => ({
+      ...prev,
+      ai_provider: {
+        ...((prev as any).ai_provider || {}),
+        ...patch,
+      },
+    } as any));
   };
 
   if (loading) {
@@ -1382,6 +1624,172 @@ function ConfigWorkspace() {
         )}
       </PremiumCard>
 
+      {cfg.llm_backend === 'openai_compatible' && (
+        <PremiumCard className="p-6 border-orange-500/20">
+          <div className="flex items-center justify-between mb-4 gap-3">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <Zap className="w-4 h-4 text-orange-400" /> 9Router Media & Search
+            </h3>
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <label className="text-xs text-slate-300 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={!!((cfg as any).ai_provider?.fallback_to_local ?? true)}
+                  onChange={e => updateAiProvider({ fallback_to_local: e.target.checked })}
+                />
+                Fallback to local providers
+              </label>
+              <button
+                onClick={() => void fetchConfig()}
+                disabled={saving}
+                className="px-3 py-1.5 text-xs rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 disabled:opacity-60"
+              >
+                Reload
+              </button>
+              <button
+                onClick={() => void saveConfig()}
+                disabled={saving}
+                className="px-3 py-1.5 text-xs rounded-lg border border-orange-500/30 text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 disabled:opacity-60 inline-flex items-center gap-1.5"
+              >
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                {saving ? 'Saving...' : 'Save 9Router'}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">9Router Base URL</p>
+              <input type="text" value={String((!nrCfg.base_url || nrCfg.base_url === 'http://localhost:20128') ? String(cfg.openai_base_url || '').replace(/\/v1$/, '') : nrCfg.base_url)} onChange={e => updateNineRouter({ base_url: e.target.value })} placeholder="http://localhost:20128" className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" />
+            </label>
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">9Router API Key</p>
+              <input type="password" value={String((!nrCfg.api_key || nrCfg.api_key === 'none') ? cfg.openai_api_key : nrCfg.api_key)} onChange={e => updateNineRouter({ api_key: e.target.value })} placeholder="none" className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" />
+            </label>
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3 md:col-span-2">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Chat Model</p>
+              <input type="text" value={String(nrCfg.chat_model || cfg.openai_model || '')} onChange={e => updateNineRouter({ chat_model: e.target.value })} placeholder="cx/gpt-5.5" className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" />
+            </label>
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3 md:col-span-2">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Image Model</p>
+              <div className="flex gap-2">
+                {availableImageModels.length > 0 ? (
+                  <select value={String(nrCfg.image_model || '')} onChange={e => updateNineRouter({ image_model: e.target.value })} className="flex-1 bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
+                    <option value="">choose image model</option>
+                    {availableImageModels.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                ) : (
+                  <input type="text" value={String(nrCfg.image_model || '')} onChange={e => updateNineRouter({ image_model: e.target.value })} placeholder="gemini/gemini-3-pro-image-preview" className="flex-1 bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" />
+                )}
+                <button onClick={() => void fetchAvailableImageModels()} disabled={fetchingImageModels} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-orange-500/30 text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 text-xs font-semibold disabled:opacity-60 shrink-0">
+                  {fetchingImageModels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                  {fetchingImageModels ? 'Loading...' : 'Fetch Image Models'}
+                </button>
+              </div>
+            </label>
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Image Size</p>
+              <input type="text" value={String(nrCfg.image_size || '1024x1792')} onChange={e => updateNineRouter({ image_size: e.target.value || '1024x1792' })} placeholder="1024x1792" className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" />
+            </label>
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">TTS Response Format</p>
+              <select value={String(nrCfg.tts_response_format || 'wav')} onChange={e => updateNineRouter({ tts_response_format: e.target.value })} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
+                <option value="wav">wav</option>
+                <option value="mp3">mp3</option>
+              </select>
+            </label>
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">TTS Model</p>
+              <div className="flex gap-2">
+                {availableTtsModels.length > 0 ? (
+                  <select value={String(nrCfg.tts_model || '')} onChange={e => updateNineRouter({ tts_model: e.target.value })} className="flex-1 bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
+                    {availableTtsModels.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                ) : (
+                  <input type="text" value={String(nrCfg.tts_model || '')} onChange={e => updateNineRouter({ tts_model: e.target.value })} placeholder="edge-tts/vi-VN-HoaiMyNeural" className="flex-1 bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" />
+                )}
+                <button onClick={() => void fetchAvailableTtsModels()} disabled={fetchingTtsModels} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-orange-500/30 text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 text-xs font-semibold disabled:opacity-60 shrink-0">
+                  {fetchingTtsModels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                  {fetchingTtsModels ? 'Loading...' : 'Fetch TTS'}
+                </button>
+              </div>
+            </label>
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">TTS Voice</p>
+              <div className="flex gap-2">
+                {availableVoices.length > 0 ? (
+                  <select value={String(nrCfg.tts_voice || '')} onChange={e => updateNineRouter({ tts_voice: e.target.value })} className="flex-1 bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
+                    {availableVoices.map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                ) : (
+                  <input type="text" value={String(nrCfg.tts_voice || '')} onChange={e => updateNineRouter({ tts_voice: e.target.value })} placeholder="vi-VN-HoaiMyNeural" className="flex-1 bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" />
+                )}
+                <button onClick={() => void fetchAvailableVoices()} disabled={fetchingVoices} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-orange-500/30 text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 text-xs font-semibold disabled:opacity-60 shrink-0">
+                  {fetchingVoices ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                  {fetchingVoices ? 'Loading...' : 'Fetch Voices'}
+                </button>
+              </div>
+            </label>
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">STT Model</p>
+              <div className="flex gap-2">
+                {availableSttModels.length > 0 ? (
+                  <select value={String(nrCfg.stt_model || '')} onChange={e => updateNineRouter({ stt_model: e.target.value })} className="flex-1 bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
+                    {availableSttModels.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                ) : (
+                  <input type="text" value={String(nrCfg.stt_model || '')} onChange={e => updateNineRouter({ stt_model: e.target.value })} placeholder="openai/whisper-1" className="flex-1 bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" />
+                )}
+                <button onClick={() => void fetchAvailableSttModels()} disabled={fetchingSttModels} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-orange-500/30 text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 text-xs font-semibold disabled:opacity-60 shrink-0">
+                  {fetchingSttModels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                  {fetchingSttModels ? 'Loading...' : 'Fetch STT'}
+                </button>
+              </div>
+            </label>
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">STT Response Format</p>
+              <select value={String(nrCfg.stt_response_format || 'srt')} onChange={e => updateNineRouter({ stt_response_format: e.target.value })} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
+                <option value="srt">srt</option>
+                <option value="json">json</option>
+                <option value="text">text</option>
+              </select>
+            </label>
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Search Model</p>
+              <div className="flex gap-2">
+                {availableWebModels.length > 0 ? (
+                  <select value={String(nrCfg.search_model || '')} onChange={e => updateNineRouter({ search_model: e.target.value })} className="flex-1 bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
+                    {availableWebModels.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                ) : (
+                  <input type="text" value={String(nrCfg.search_model || 'tavily/search')} onChange={e => updateNineRouter({ search_model: e.target.value })} placeholder="tavily/search" className="flex-1 bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" />
+                )}
+                <button onClick={() => void fetchAvailableWebModels()} disabled={fetchingWebModels} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-orange-500/30 text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 text-xs font-semibold disabled:opacity-60 shrink-0">
+                  {fetchingWebModels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                  {fetchingWebModels ? 'Loading...' : 'Fetch Web Models'}
+                </button>
+              </div>
+            </label>
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Search Max Results</p>
+              <input type="number" min={1} max={25} value={Number(nrCfg.search_max_results || 10)} onChange={e => updateNineRouter({ search_max_results: Number(e.target.value) })} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" />
+            </label>
+          </div>
+
+          {imageModelsError && <p className="text-xs text-red-300 mt-3 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{imageModelsError}</p>}
+          {ttsModelsError && <p className="text-xs text-red-300 mt-3 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{ttsModelsError}</p>}
+          {sttModelsError && <p className="text-xs text-red-300 mt-3 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{sttModelsError}</p>}
+          {voicesError && <p className="text-xs text-red-300 mt-3 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{voicesError}</p>}
+          {webModelsError && <p className="text-xs text-red-300 mt-3 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{webModelsError}</p>}
+          {String(nrCfg.image_model || '').startsWith('codex/') && <p className="text-xs text-amber-300 mt-3 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">Codex image models require ChatGPT Plus/Pro entitlement on 9Router. Use Gemini/FLUX/Nano Banana if you see 502.</p>}
+          {availableImageModels.length > 0 && <p className="text-xs text-emerald-300 mt-3">{availableImageModels.length} image model(s) found on 9Router.</p>}
+          {availableTtsModels.length > 0 && <p className="text-xs text-emerald-300 mt-3">{availableTtsModels.length} TTS model(s) found on 9Router.</p>}
+          {availableSttModels.length > 0 && <p className="text-xs text-emerald-300 mt-3">{availableSttModels.length} STT model(s) found on 9Router.</p>}
+          {availableVoices.length > 0 && <p className="text-xs text-emerald-300 mt-3">{availableVoices.length} voice option(s) available.</p>}
+          {availableWebModels.length > 0 && <p className="text-xs text-emerald-300 mt-3">{availableWebModels.length} web search model(s) found on 9Router.</p>}
+        </PremiumCard>
+      )}
+
       <PremiumCard className="p-6 border-cyan-500/20">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -1438,6 +1846,7 @@ function ConfigWorkspace() {
             <select value={(cfg as any).tts_engine || 'kitten'} onChange={e => setCfg(prev => ({ ...prev, tts_engine: e.target.value } as any))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
               <option value="kitten">kitten (fast, recommended)</option>
               <option value="omnivoice">omnivoice (high quality, needs GPU)</option>
+              <option value="ninerouter">ninerouter (9Router cloud)</option>
             </select>
           </label>
 
@@ -1446,6 +1855,7 @@ function ConfigWorkspace() {
             <select value={(cfg as any).tts_fallback_engine || 'kitten'} onChange={e => setCfg(prev => ({ ...prev, tts_fallback_engine: e.target.value } as any))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
               <option value="kitten">kitten</option>
               <option value="omnivoice">omnivoice</option>
+              <option value="ninerouter">ninerouter</option>
             </select>
           </label>
 
@@ -1465,6 +1875,7 @@ function ConfigWorkspace() {
             <select value={cfg.stt_provider} onChange={e => setCfg(prev => ({ ...prev, stt_provider: e.target.value }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" title="local_whisper is local and free; assemblyai is cloud-based.">
               <option value="local_whisper">local_whisper</option>
               <option value="third_party_assemblyai">third_party_assemblyai</option>
+              <option value="ninerouter">ninerouter</option>
             </select>
           </label>
 
@@ -2040,7 +2451,7 @@ function YouTubeWorkspace({
   const [newAccNickname, setNewAccNickname] = useState('');
   const [newAccNiche, setNewAccNiche] = useState('');
   const [newAccFirefoxProfile, setNewAccFirefoxProfile] = useState('');
-  const [newAccLanguage, setNewAccLanguage] = useState('english');
+  const [newAccLanguage, setNewAccLanguage] = useState('vietnamese');
   const [deletingAccountId, setDeletingAccountId] = useState('');
   const [loading, setLoading] = useState(false);
   const [generatingAudioText, setGeneratingAudioText] = useState(false);
@@ -2061,8 +2472,8 @@ function YouTubeWorkspace({
   const [sessionVideoPath, setSessionVideoPath] = useState('');
   const [metadataDirtySessionKey, setMetadataDirtySessionKey] = useState('');
   const [regenMetadataField, setRegenMetadataField] = useState<string>(''); // '' | 'title' | 'description' | 'tags' | 'all'
-  const [ttsVoice, setTtsVoice] = useState('Luna');
-  const [scriptLanguage, setScriptLanguage] = useState('english');
+  const [ttsVoice, setTtsVoice] = useState(VIETNAMESE_TTS_VOICES[0]);
+  const [scriptLanguage, setScriptLanguage] = useState('vietnamese');
   const [audioTextPreview, setAudioTextPreview] = useState('');
   const [ccPreview, setCcPreview] = useState('');
   const [promptTrace, setPromptTrace] = useState('');
@@ -2126,6 +2537,11 @@ function YouTubeWorkspace({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ttsEngine]);
+
+  useEffect(() => {
+    const languageVoices = LANGUAGE_VOICE_MAP[scriptLanguage] || VOICE_OPTIONS;
+    setTtsVoice(prev => languageVoices.includes(prev) ? prev : languageVoices[0]);
+  }, [scriptLanguage]);
 
   const effectiveSessionId = activeSessionId || sessionId;
   const currentSessionKey = effectiveSessionId || DRAFT_SESSION_KEY;
@@ -2222,7 +2638,8 @@ function YouTubeWorkspace({
       warnings.push('Audio Text quá ngắn (< 30 ký tự), dễ gây subtitle/audio lỗi.');
     }
 
-    if (!VOICE_OPTIONS.includes(ttsVoice)) {
+    const allowedVoices = LANGUAGE_VOICE_MAP[scriptLanguage] || VOICE_OPTIONS;
+    if (!allowedVoices.includes(ttsVoice)) {
       warnings.push('Voice không hợp lệ. Hãy chọn lại voice trong danh sách.');
     }
 

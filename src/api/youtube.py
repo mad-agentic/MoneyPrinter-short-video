@@ -88,6 +88,31 @@ def _build_session_name_hint(subject: str, script: str) -> str:
     words = snippet.split()
     return " ".join(words[:8])
 
+def _looks_vietnamese_text(text: str) -> bool:
+    sample = (text or "").lower()
+    vietnamese_chars = set("ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ")
+    if any(ch in vietnamese_chars for ch in sample):
+        return True
+    common_words = (" là ", " và ", " của ", " cho ", " nếu ", " đừng ", " video ", " tiktok ")
+    padded = f" {sample} "
+    return sum(1 for word in common_words if word in padded) >= 2
+
+def _resolve_script_language(requested: str, *texts: str) -> str:
+    language = (requested or "").strip().lower()
+    if language in {"vietnamese", "vi", "tiếng việt", "tieng viet"}:
+        return "vietnamese"
+    if any(_looks_vietnamese_text(text) for text in texts):
+        return "vietnamese"
+    return language or "english"
+
+VIETNAMESE_TTS_VOICES = {"vi-VN-HoaiMyNeural", "vi-VN-NamMinhNeural"}
+
+def _resolve_tts_voice(requested: str, language: str) -> str:
+    voice = (requested or "").strip()
+    if (language or "").strip().lower() == "vietnamese":
+        return voice if voice in VIETNAMESE_TTS_VOICES else "vi-VN-HoaiMyNeural"
+    return voice
+
 
 def generate_and_upload_video(
     account_id: str,
@@ -123,20 +148,29 @@ def generate_and_upload_video(
         add_log("info", f"🎬 Session started: {session_id}")
         add_log("info", f"📺 Channel: {acc['nickname']} | Niche: {acc['niche']}")
 
+        resolved_language = _resolve_script_language(
+            script_language.strip() if script_language.strip() else str(acc.get("language", "english")),
+            custom_subject,
+            custom_script,
+            title_override,
+            description_override,
+        )
+
         youtube = YouTube(
             str(acc.get("id", "")).strip(),
             str(acc.get("nickname", "")).strip() or "youtube-account",
             str(acc.get("firefox_profile", "")).strip(),
             str(acc.get("niche", "")).strip(),
-            (script_language.strip() if script_language.strip() else (str(acc.get("language", "english")).strip() or "english")),
+            resolved_language,
             session=session,
         )
         youtube.title_narration_text = title_override.strip()
         youtube.english_cc_bottom = bool(english_cc_bottom)
         youtube.enable_cc = bool(enable_cc)
-        tts_language = (script_language.strip() if script_language.strip() else str(acc.get("language", "english")).strip())
+        tts_language = resolved_language
+        resolved_voice = _resolve_tts_voice(tts_voice, resolved_language)
         tts = TTS(
-            voice=tts_voice.strip() if str(tts_voice).strip() else None,
+            voice=resolved_voice or None,
             language=tts_language,
         )
         tts_status = tts.runtime_status()
@@ -243,7 +277,7 @@ def create_draft_session(account_id: str, req: DraftSessionRequest):
 
     name_hint = _build_session_name_hint(req.subject, req.script)
     session = create_session(name_hint)
-    session.save_stage("init", subject=req.subject.strip(), script=req.script.strip())
+    session.save_stage("init", name=name_hint or session.meta.get("name", ""), subject=req.subject.strip(), script=req.script.strip())
     add_log("info", f"📝 Draft session created: {session.session_id}")
     return {"session_id": session.session_id, "status": "draft"}
 
@@ -309,7 +343,10 @@ def generate_audio_text(account_id: str, req: AudioTextRequest):
         raise HTTPException(status_code=404, detail="Account not found")
 
     ensure_model_selected()
-    language = req.script_language.strip() if req.script_language.strip() else (str(acc.get("language", "english")).strip() or "english")
+    language = _resolve_script_language(
+        req.script_language.strip() if req.script_language.strip() else str(acc.get("language", "english")),
+        subject,
+    )
 
     session = None
     if req.resume_session_id.strip():
@@ -407,7 +444,11 @@ def generate_cc_preview(account_id: str, req: SubtitlePreviewRequest):
 
     subject = (req.subject or "").strip() or str(session.meta.get("subject", "")).strip()
     script = (req.script or "").strip() or str(session.meta.get("tts_text") or session.meta.get("script") or "").strip()
-    language = req.script_language.strip() if req.script_language.strip() else acc["language"]
+    language = _resolve_script_language(
+        req.script_language.strip() if req.script_language.strip() else str(acc.get("language", "english")),
+        subject,
+        script,
+    )
 
     if not script:
         raise HTTPException(status_code=400, detail="Audio Text is required to generate CC preview")
@@ -425,9 +466,10 @@ def generate_cc_preview(account_id: str, req: SubtitlePreviewRequest):
         youtube.script = script
         youtube.english_cc_bottom = bool(req.english_cc_bottom)
         youtube.enable_cc = bool(req.enable_cc)
+        resolved_voice = _resolve_tts_voice(req.tts_voice, language)
 
         tts = TTS(
-            voice=req.tts_voice.strip() if str(req.tts_voice).strip() else None,
+            voice=resolved_voice or None,
             language=language,
         )
         tts_status = tts.runtime_status()

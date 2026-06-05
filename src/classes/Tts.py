@@ -58,6 +58,12 @@ class TTS:
         self._language = (language or get_tts_language() or "auto").strip().lower()
         self._engine = (get_tts_engine() or "kitten").strip().lower()
         self._fallback_engine = (get_tts_fallback_engine() or "kitten").strip().lower()
+        try:
+            from providers.registry import is_ninerouter_active
+            if is_ninerouter_active():
+                self._engine = "ninerouter"
+        except Exception:
+            pass
         self._kitten_model = None
         self._omnivoice_model = None
         self._strict_mode = get_tts_strict_mode()
@@ -79,6 +85,12 @@ class TTS:
         return self._fallback_engine
 
     def _check_engine_available(self, engine: str) -> Tuple[bool, str]:
+        if engine == "ninerouter":
+            try:
+                from providers.registry import is_ninerouter_active
+                return (True, "9Router provider active") if is_ninerouter_active() else (False, "9Router provider inactive")
+            except Exception as exc:
+                return False, f"9Router unavailable: {exc}"
         if engine == "omnivoice":
             try:
                 from omnivoice import OmniVoice  # type: ignore[reportMissingImports]  # noqa: F401
@@ -94,8 +106,9 @@ class TTS:
         return False, f"unsupported engine '{engine}'"
 
     def runtime_status(self) -> dict:
-        primary_engine = self._engine if self._engine in {"kitten", "omnivoice"} else "kitten"
-        fallback_engine = self._fallback_engine if self._fallback_engine in {"kitten", "omnivoice"} else "kitten"
+        supported = {"kitten", "omnivoice", "ninerouter"}
+        primary_engine = self._engine if self._engine in supported else "kitten"
+        fallback_engine = self._fallback_engine if self._fallback_engine in supported else "kitten"
         primary_ready, primary_detail = self._check_engine_available(primary_engine)
         fallback_ready, fallback_detail = self._check_engine_available(fallback_engine)
 
@@ -127,6 +140,13 @@ class TTS:
                 "ok": True,
                 "engine": primary,
                 "detail": "OmniVoice model preloaded",
+            }
+
+        if primary == "ninerouter":
+            return {
+                "ok": status["primary_ready"],
+                "engine": primary,
+                "detail": status["primary_detail"],
             }
 
         # Kitten warmup path
@@ -400,7 +420,23 @@ class TTS:
         info(f"OmniVoice synthesis complete (language={self._language}, voice={self._voice})")
         return output_file
 
+    def _synthesize_with_ninerouter(self, normalized_text: str, output_file: str) -> str:
+        from providers.registry import get_ninerouter, is_ninerouter_active
+
+        if not is_ninerouter_active():
+            raise RuntimeError("9Router provider is not active")
+        get_ninerouter().synthesize_speech(
+            normalized_text,
+            output_file,
+            voice=self._voice,
+            language=self._language,
+        )
+        info(f"9Router TTS synthesis complete (language={self._language}, voice={self._voice})")
+        return output_file
+
     def _synthesize_with_engine(self, engine: str, normalized_text: str, output_file: str) -> str:
+        if engine == "ninerouter":
+            return self._synthesize_with_ninerouter(normalized_text, output_file)
         if engine == "omnivoice":
             return self._synthesize_with_omnivoice(normalized_text, output_file)
         return self._synthesize_with_kitten(normalized_text, output_file)
@@ -422,6 +458,13 @@ class TTS:
             warning(f"Primary TTS engine '{primary_engine}' failed: {exc}")
 
         if fallback_engine == primary_engine:
+            try:
+                from providers.registry import fallback_to_local
+                if primary_engine == "ninerouter" and fallback_to_local():
+                    warning("Retrying TTS with local kitten fallback...")
+                    return self._synthesize_with_kitten(normalized_text, output_file)
+            except Exception:
+                pass
             raise RuntimeError(f"TTS failed on engine '{primary_engine}': {primary_error}") from primary_error
 
         warning(f"Retrying TTS with fallback engine '{fallback_engine}'...")

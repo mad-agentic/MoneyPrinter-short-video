@@ -26,6 +26,21 @@ def search_web(query: str, max_results: int = 10) -> list[dict]:
     Returns a list of dicts: [{title, url, body, published}]
     """
     try:
+        from providers.registry import fallback_to_local, get_ninerouter, is_ninerouter_active
+        if is_ninerouter_active():
+            try:
+                results = get_ninerouter().search(query, max_results=max_results)
+                data = [result.to_dict() for result in results]
+                log("INFO", f"[Research] 9Router found {len(data)} results for: {query}")
+                return data
+            except Exception as exc:
+                log("WARNING", f"[Research] 9Router search failed: {exc}")
+                if not fallback_to_local():
+                    return []
+    except Exception:
+        pass
+
+    try:
         # ddgs is the new name (duckduckgo_search was renamed)
         try:
             from ddgs import DDGS

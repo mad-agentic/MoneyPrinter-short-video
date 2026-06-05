@@ -7,6 +7,11 @@ from termcolor import colored
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+def _load_config_json(file):
+    """Load config JSON while tolerating UTF-8 BOM at the start of the file."""
+    with open(file.name, "r", encoding="utf-8-sig") as config_file:
+        return json.load(config_file)
+
 def assert_folder_structure() -> None:
     """
     Make sure that the nessecary folder structure is present.
@@ -37,7 +42,7 @@ def get_email_credentials() -> dict:
         credentials (dict): The email credentials
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["email"]
+        return _load_config_json(file)["email"]
 
 def get_verbose() -> bool:
     """
@@ -47,7 +52,7 @@ def get_verbose() -> bool:
         verbose (bool): The verbose flag
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["verbose"]
+        return _load_config_json(file)["verbose"]
 
 def get_firefox_profile_path() -> str:
     """
@@ -57,7 +62,7 @@ def get_firefox_profile_path() -> str:
         path (str): The path to the Firefox profile
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["firefox_profile"]
+        return _load_config_json(file)["firefox_profile"]
 
 def get_headless() -> bool:
     """
@@ -67,7 +72,7 @@ def get_headless() -> bool:
         headless (bool): The headless flag
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["headless"]
+        return _load_config_json(file)["headless"]
 
 def get_ollama_base_url() -> str:
     """
@@ -77,7 +82,7 @@ def get_ollama_base_url() -> str:
         url (str): The Ollama base URL
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get("ollama_base_url", "http://127.0.0.1:11434")
+        return _load_config_json(file).get("ollama_base_url", "http://127.0.0.1:11434")
 
 def get_ollama_model() -> str:
     """
@@ -87,7 +92,7 @@ def get_ollama_model() -> str:
         model (str): The Ollama model name, or empty string if not set.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get("ollama_model", "")
+        return _load_config_json(file).get("ollama_model", "")
 
 def get_twitter_language() -> str:
     """
@@ -97,7 +102,7 @@ def get_twitter_language() -> str:
         language (str): The Twitter language
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["twitter_language"]
+        return _load_config_json(file)["twitter_language"]
 
 def get_nanobanana2_api_base_url() -> str:
     """
@@ -107,7 +112,7 @@ def get_nanobanana2_api_base_url() -> str:
         url (str): API base URL
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get(
+        return _load_config_json(file).get(
             "nanobanana2_api_base_url",
             "https://generativelanguage.googleapis.com/v1beta",
         )
@@ -120,7 +125,7 @@ def get_nanobanana2_api_key() -> str:
         key (str): API key
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        configured = json.load(file).get("nanobanana2_api_key", "")
+        configured = _load_config_json(file).get("nanobanana2_api_key", "")
         return configured or os.environ.get("GEMINI_API_KEY", "")
 
 def get_nanobanana2_model() -> str:
@@ -131,7 +136,7 @@ def get_nanobanana2_model() -> str:
         model (str): Model name
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get("nanobanana2_model", "gemini-3.1-flash-image-preview")
+        return _load_config_json(file).get("nanobanana2_model", "gemini-3.1-flash-image-preview")
 
 def get_nanobanana2_aspect_ratio() -> str:
     """
@@ -141,7 +146,7 @@ def get_nanobanana2_aspect_ratio() -> str:
         ratio (str): Aspect ratio
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get("nanobanana2_aspect_ratio", "9:16")
+        return _load_config_json(file).get("nanobanana2_aspect_ratio", "9:16")
 
 def get_threads() -> int:
     """
@@ -151,7 +156,7 @@ def get_threads() -> int:
         threads (int): Amount of threads
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["threads"]
+        return _load_config_json(file)["threads"]
     
 def get_zip_url() -> str:
     """
@@ -161,7 +166,7 @@ def get_zip_url() -> str:
         url (str): The URL to the zip file
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["zip_url"]
+        return _load_config_json(file)["zip_url"]
 
 def get_is_for_kids() -> bool:
     """
@@ -171,7 +176,7 @@ def get_is_for_kids() -> bool:
         is_for_kids (bool): The is for kids flag
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["is_for_kids"]
+        return _load_config_json(file)["is_for_kids"]
 
 def get_google_maps_scraper_zip_url() -> str:
     """
@@ -181,7 +186,7 @@ def get_google_maps_scraper_zip_url() -> str:
         url (str): The URL to the zip file
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["google_maps_scraper"]
+        return _load_config_json(file)["google_maps_scraper"]
 
 def get_google_maps_scraper_niche() -> str:
     """
@@ -191,7 +196,7 @@ def get_google_maps_scraper_niche() -> str:
         niche (str): The niche
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["google_maps_scraper_niche"]
+        return _load_config_json(file)["google_maps_scraper_niche"]
 
 def get_scraper_timeout() -> int:
     """
@@ -201,7 +206,7 @@ def get_scraper_timeout() -> int:
         timeout (int): The timeout
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["scraper_timeout"] or 300
+        return _load_config_json(file)["scraper_timeout"] or 300
 
 def get_outreach_message_subject() -> str:
     """
@@ -211,7 +216,7 @@ def get_outreach_message_subject() -> str:
         subject (str): The outreach message subject
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["outreach_message_subject"]
+        return _load_config_json(file)["outreach_message_subject"]
     
 def get_outreach_message_body_file() -> str:
     """
@@ -221,7 +226,7 @@ def get_outreach_message_body_file() -> str:
         file (str): The outreach message body file
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["outreach_message_body_file"]
+        return _load_config_json(file)["outreach_message_body_file"]
 
 def get_tts_voice() -> str:
     """
@@ -231,7 +236,7 @@ def get_tts_voice() -> str:
         voice (str): The TTS voice
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get("tts_voice", "Jasper")
+        return _load_config_json(file).get("tts_voice", "Jasper")
 
 def get_tts_engine() -> str:
     """
@@ -241,7 +246,7 @@ def get_tts_engine() -> str:
         engine (str): Preferred TTS engine name.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return str(json.load(file).get("tts_engine", "kitten")).strip().lower()
+        return str(_load_config_json(file).get("tts_engine", "kitten")).strip().lower()
 
 def get_tts_fallback_engine() -> str:
     """
@@ -251,7 +256,7 @@ def get_tts_fallback_engine() -> str:
         engine (str): Fallback TTS engine name.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return str(json.load(file).get("tts_fallback_engine", "kitten")).strip().lower()
+        return str(_load_config_json(file).get("tts_fallback_engine", "kitten")).strip().lower()
 
 def get_tts_language() -> str:
     """
@@ -261,7 +266,7 @@ def get_tts_language() -> str:
         language (str): Language hint, e.g. "auto", "vietnamese", "english".
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return str(json.load(file).get("tts_language", "auto")).strip().lower()
+        return str(_load_config_json(file).get("tts_language", "auto")).strip().lower()
 
 def get_tts_sample_rate() -> int:
     """
@@ -271,7 +276,7 @@ def get_tts_sample_rate() -> int:
         sample_rate (int): Output sample rate in Hz.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return int(json.load(file).get("tts_sample_rate", 24000))
+        return int(_load_config_json(file).get("tts_sample_rate", 24000))
 
 def get_omnivoice_model() -> str:
     """
@@ -281,7 +286,7 @@ def get_omnivoice_model() -> str:
         model (str): OmniVoice model identifier.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return str(json.load(file).get("omnivoice_model", "k2-fsa/OmniVoice")).strip()
+        return str(_load_config_json(file).get("omnivoice_model", "k2-fsa/OmniVoice")).strip()
 
 def get_omnivoice_device_map() -> str:
     """
@@ -291,7 +296,7 @@ def get_omnivoice_device_map() -> str:
         device_map (str): Device placement setting.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return str(json.load(file).get("omnivoice_device_map", "auto")).strip()
+        return str(_load_config_json(file).get("omnivoice_device_map", "auto")).strip()
 
 def get_omnivoice_dtype() -> str:
     """
@@ -301,7 +306,7 @@ def get_omnivoice_dtype() -> str:
         dtype (str): Dtype name such as "auto", "float16", "float32".
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return str(json.load(file).get("omnivoice_dtype", "auto")).strip().lower()
+        return str(_load_config_json(file).get("omnivoice_dtype", "auto")).strip().lower()
 
 def get_omnivoice_instruct() -> str:
     """
@@ -311,7 +316,7 @@ def get_omnivoice_instruct() -> str:
         instruct (str): Voice design instruction.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return str(json.load(file).get("omnivoice_instruct", "")).strip()
+        return str(_load_config_json(file).get("omnivoice_instruct", "")).strip()
 
 def get_tts_strict_mode() -> bool:
     """
@@ -321,7 +326,7 @@ def get_tts_strict_mode() -> bool:
         strict_mode (bool): True to fail hard on partial TTS success.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return bool(json.load(file).get("tts_strict_mode", False))
+        return bool(_load_config_json(file).get("tts_strict_mode", False))
 
 def get_assemblyai_api_key() -> str:
     """
@@ -331,7 +336,7 @@ def get_assemblyai_api_key() -> str:
         key (str): The AssemblyAI API key
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["assembly_ai_api_key"]
+        return _load_config_json(file)["assembly_ai_api_key"]
 
 def get_stt_provider() -> str:
     """
@@ -341,7 +346,7 @@ def get_stt_provider() -> str:
         provider (str): The STT provider
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get("stt_provider", "local_whisper")
+        return _load_config_json(file).get("stt_provider", "local_whisper")
 
 def get_whisper_model() -> str:
     """
@@ -351,7 +356,7 @@ def get_whisper_model() -> str:
         model (str): Whisper model name
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get("whisper_model", "base")
+        return _load_config_json(file).get("whisper_model", "base")
 
 def get_whisper_device() -> str:
     """
@@ -361,7 +366,7 @@ def get_whisper_device() -> str:
         device (str): Whisper device
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get("whisper_device", "auto")
+        return _load_config_json(file).get("whisper_device", "auto")
 
 def get_whisper_compute_type() -> str:
     """
@@ -371,7 +376,7 @@ def get_whisper_compute_type() -> str:
         compute_type (str): Whisper compute type
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get("whisper_compute_type", "int8")
+        return _load_config_json(file).get("whisper_compute_type", "int8")
 
 def get_whisper_vad_filter() -> bool:
     """
@@ -381,7 +386,7 @@ def get_whisper_vad_filter() -> bool:
         enabled (bool): True to enable VAD filter.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return bool(json.load(file).get("whisper_vad_filter", False))
+        return bool(_load_config_json(file).get("whisper_vad_filter", False))
 
 def get_whisper_beam_size() -> int:
     """
@@ -391,7 +396,7 @@ def get_whisper_beam_size() -> int:
         beam_size (int): Beam width for decoding.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return int(json.load(file).get("whisper_beam_size", 1))
+        return int(_load_config_json(file).get("whisper_beam_size", 1))
 
 def get_enable_title_audio() -> bool:
     """
@@ -401,7 +406,7 @@ def get_enable_title_audio() -> bool:
         enabled (bool): True to prepend title audio (default), False to skip it.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return bool(json.load(file).get("enable_title_audio", True))
+        return bool(_load_config_json(file).get("enable_title_audio", True))
 
 def get_video_encode_preset() -> str:
     """
@@ -411,7 +416,7 @@ def get_video_encode_preset() -> str:
         preset (str): x264 preset value.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return str(json.load(file).get("video_encode_preset", "veryfast"))
+        return str(_load_config_json(file).get("video_encode_preset", "veryfast"))
 
 def get_video_encode_crf() -> int:
     """
@@ -421,7 +426,7 @@ def get_video_encode_crf() -> int:
         crf (int): Constant Rate Factor.
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return int(json.load(file).get("video_encode_crf", 24))
+        return int(_load_config_json(file).get("video_encode_crf", 24))
     
 def equalize_subtitles(srt_path: str, max_chars: int = 10) -> None:
     """
@@ -434,7 +439,19 @@ def equalize_subtitles(srt_path: str, max_chars: int = 10) -> None:
     Returns:
         None
     """
-    srt_equalizer.equalize_srt_file(srt_path, srt_path, max_chars)
+    normalized_path = os.path.abspath(srt_path)
+    try:
+        equalizer_path = os.path.relpath(normalized_path, ROOT_DIR)
+        if equalizer_path.startswith("..") or os.path.isabs(equalizer_path):
+            equalizer_path = normalized_path
+    except ValueError:
+        equalizer_path = normalized_path
+    previous_cwd = os.getcwd()
+    try:
+        os.chdir(ROOT_DIR)
+        srt_equalizer.equalize_srt_file(equalizer_path, equalizer_path, max_chars)
+    finally:
+        os.chdir(previous_cwd)
     
 def get_font() -> str:
     """
@@ -444,7 +461,7 @@ def get_font() -> str:
         font (str): The font
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["font"]
+        return _load_config_json(file)["font"]
 
 def get_fonts_dir() -> str:
     """
@@ -463,7 +480,7 @@ def get_imagemagick_path() -> str:
         path (str): The path to ImageMagick
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file)["imagemagick_path"]
+        return _load_config_json(file)["imagemagick_path"]
 
 def get_script_sentence_length() -> int:
     """
@@ -474,7 +491,7 @@ def get_script_sentence_length() -> int:
         length (int): Length of script's sentence
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        config_json = json.load(file)
+        config_json = _load_config_json(file)
         if (config_json.get("script_sentence_length") is not None):
             return config_json["script_sentence_length"]
         else:
@@ -488,7 +505,7 @@ def get_llm_backend() -> str:
         backend (str): 'ollama' or 'openai_compatible'
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get("llm_backend", "ollama")
+        return _load_config_json(file).get("llm_backend", "ollama")
 
 def get_openai_base_url() -> str:
     """
@@ -498,7 +515,7 @@ def get_openai_base_url() -> str:
         url (str): Base URL
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get("openai_base_url", "http://localhost:20128/v1")
+        return _load_config_json(file).get("openai_base_url", "http://localhost:20128/v1")
 
 def get_openai_model() -> str:
     """
@@ -508,7 +525,7 @@ def get_openai_model() -> str:
         model (str): Model name
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return json.load(file).get("openai_model", "")
+        return _load_config_json(file).get("openai_model", "")
 
 def get_openai_api_key() -> str:
     """
@@ -519,8 +536,74 @@ def get_openai_api_key() -> str:
         key (str): API key (can be 'none' for local routers)
     """
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        configured = json.load(file).get("openai_api_key", "")
+        configured = _load_config_json(file).get("openai_api_key", "")
         return configured or os.environ.get("OPENAI_API_KEY", "none")
+
+def _read_config_json() -> dict:
+    with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
+        return _load_config_json(file)
+
+def _default_ninerouter_config(config_json: dict | None = None) -> dict:
+    config_json = config_json or {}
+    openai_base_url = str(config_json.get("openai_base_url", "http://localhost:20128/v1")).rstrip("/")
+    if openai_base_url.endswith("/v1"):
+        base_url = openai_base_url[:-3]
+    else:
+        base_url = openai_base_url
+    return {
+        "enabled": str(config_json.get("llm_backend", "")).strip() == "openai_compatible",
+        "base_url": base_url or "http://localhost:20128",
+        "api_key": str(config_json.get("openai_api_key", "none") or "none"),
+        "chat_model": str(config_json.get("openai_model", "") or ""),
+        "image_model": "gemini/gemini-3-pro-image-preview",
+        "image_size": "1024x1792",
+        "tts_model": "edge-tts/vi-VN-HoaiMyNeural",
+        "tts_voice": "vi-VN-HoaiMyNeural",
+        "tts_response_format": "wav",
+        "stt_model": "gemini/gemini-2.5-flash",
+        "stt_response_format": "srt",
+        "search_model": "search-combo",
+        "search_max_results": 10,
+    }
+
+def get_ai_provider_config() -> dict:
+    config_json = _read_config_json()
+    raw = config_json.get("ai_provider", {})
+    if not isinstance(raw, dict):
+        raw = {}
+    active = str(raw.get("active", "") or "").strip().lower()
+    if not active and str(config_json.get("llm_backend", "")).strip() == "openai_compatible":
+        active = "ninerouter"
+    return {
+        "active": active,
+        "fallback_to_local": bool(raw.get("fallback_to_local", True)),
+    }
+
+def get_provider_configs() -> dict:
+    config_json = _read_config_json()
+    providers = config_json.get("providers", {})
+    if not isinstance(providers, dict):
+        providers = {}
+
+    ninerouter = _default_ninerouter_config(config_json)
+    raw_ninerouter = providers.get("ninerouter", {})
+    if isinstance(raw_ninerouter, dict):
+        ninerouter.update(raw_ninerouter)
+
+    if not str(ninerouter.get("search_model", "") or "").strip():
+        ninerouter["search_model"] = "search-combo"
+
+    local = providers.get("local", {})
+    if not isinstance(local, dict):
+        local = {}
+
+    return {
+        "ninerouter": ninerouter,
+        "local": {"enabled": bool(local.get("enabled", True))},
+    }
+
+def get_ninerouter_config() -> dict:
+    return get_provider_configs()["ninerouter"]
 
 def get_post_bridge_config() -> dict:
     """
@@ -539,7 +622,7 @@ def get_post_bridge_config() -> dict:
     supported_platforms = {"tiktok", "instagram"}
 
     with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        config_json = json.load(file)
+        config_json = _load_config_json(file)
 
     raw_config = config_json.get("post_bridge", {})
     if not isinstance(raw_config, dict):

@@ -63,6 +63,11 @@ def _resolve_whisper_language(language: str) -> Optional[str]:
         return lang
     return _WHISPER_LANGUAGE_NAME_TO_CODE.get(lang)
 
+def _looks_vietnamese_text(text: str) -> bool:
+    sample = (text or "").lower()
+    vietnamese_chars = set("ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ")
+    return any(ch in vietnamese_chars for ch in sample)
+
 from utils import *
 from cache import *
 from .Tts import TTS
@@ -321,6 +326,11 @@ class YouTube:
             language (str): The language
         """
         return self._language
+
+    def _effective_subtitle_language(self) -> str:
+        if _looks_vietnamese_text(self.script) or _looks_vietnamese_text(self.subject):
+            return "vietnamese"
+        return self.language
 
     def generate_response(self, prompt: str, model_name: Optional[str] = None) -> str:
         """
@@ -703,6 +713,7 @@ class YouTube:
         image_path = os.path.join(ROOT_DIR, ".mp", str(uuid4()) + ".png")
         with open(image_path, "wb") as image_file:
             image_file.write(image_bytes)
+        self._ensure_vertical_image(image_path)
         if get_verbose():
             info(f' => Wrote image from {provider_label} to "{image_path}"')
         self.images.append(image_path)
@@ -717,12 +728,53 @@ class YouTube:
 
         with open(image_path, "wb") as image_file:
             image_file.write(image_bytes)
+        self._ensure_vertical_image(image_path)
 
         if get_verbose():
             info(f' => Wrote image from {provider_label} to "{image_path}"')
 
         self.images.append(image_path)
         return image_path
+
+    def _force_vertical_image_prompt(self, prompt: str) -> str:
+        vertical_directive = (
+            "Create a portrait 9:16 vertical short-video frame, full-height composition, "
+            "1080x1920 style, smartphone vertical layout. Do not create a landscape or horizontal image. "
+            "Keep the main subject centered with safe margins for captions."
+        )
+        prompt = str(prompt or "").strip()
+        if "9:16" in prompt and "vertical" in prompt.lower():
+            return f"{prompt}\n\n{vertical_directive}"
+        return f"{vertical_directive}\n\n{prompt}"
+
+    def _ensure_vertical_image(self, image_path: str) -> None:
+        """Normalize generated assets to 9:16 before they enter cache/gallery."""
+        try:
+            clip = ImageClip(image_path)
+            try:
+                if clip.h > clip.w and abs((clip.w / clip.h) - (9 / 16)) < 0.03:
+                    return
+                if clip.w / clip.h < 9 / 16:
+                    clip = clip.cropped(
+                        width=clip.w,
+                        height=round(clip.w / 0.5625),
+                        x_center=clip.w / 2,
+                        y_center=clip.h / 2,
+                    )
+                else:
+                    clip = clip.cropped(
+                        width=round(0.5625 * clip.h),
+                        height=clip.h,
+                        x_center=clip.w / 2,
+                        y_center=clip.h / 2,
+                    )
+                clip = clip.resized((1080, 1920))
+                clip.save_frame(image_path)
+                info(f"    Normalized generated image to 9:16: {os.path.basename(image_path)}")
+            finally:
+                clip.close()
+        except Exception as exc:
+            warning(f"Could not normalize generated image to 9:16 ({exc}). Video composer will crop it later.")
 
     def generate_image_nanobanana2(self, prompt: str) -> Optional[str]:
         """
@@ -736,6 +788,7 @@ class YouTube:
         """
         session_id = self._session.session_id if self._session else "unknown"
         info(f"🎨 [Session {session_id}] Generating Image using Nano Banana 2 API")
+        prompt = self._force_vertical_image_prompt(prompt)
         info(f"    Prompt: {prompt[:100]}...")
 
         api_key = get_nanobanana2_api_key()
@@ -794,6 +847,27 @@ class YouTube:
                 warning(traceback.format_exc())
             return None
 
+    def generate_image_ninerouter(self, prompt: str) -> Optional[str]:
+        session_id = self._session.session_id if self._session else "unknown"
+        prompt = self._force_vertical_image_prompt(prompt)
+        try:
+            from providers.registry import get_ninerouter, is_ninerouter_active
+            if not is_ninerouter_active():
+                return None
+            info(f"ðŸŽ¨ [Session {session_id}] Generating Image using 9Router")
+            if self._session:
+                image_path = self._session.image_cache_path(prompt)
+            else:
+                image_path = os.path.join(ROOT_DIR, ".mp", str(uuid4()) + ".png")
+            result = get_ninerouter().generate_image(prompt, image_path)
+            self._ensure_vertical_image(result.path)
+            self.images.append(result.path)
+            success(f"âœ… [Session {session_id}] 9Router image generated successfully")
+            return result.path
+        except Exception as exc:
+            warning(f"âš ï¸  [Session {session_id}] 9Router image generation failed: {exc}")
+            return None
+
     def generate_image(self, prompt: str) -> Optional[str]:
         """
         Generates an AI Image. Checks session cache first to save API tokens.
@@ -809,8 +883,20 @@ class YouTube:
             cached = self._session.get_cached_image(prompt)
             if cached:
                 info(f"💾 Cache HIT image: {os.path.basename(cached)}")
+                self._ensure_vertical_image(cached)
                 self.images.append(cached)
                 return cached
+
+        ninerouter_image = self.generate_image_ninerouter(prompt)
+        if ninerouter_image:
+            return ninerouter_image
+
+        try:
+            from providers.registry import fallback_to_local, is_ninerouter_active
+            if is_ninerouter_active() and not fallback_to_local():
+                return None
+        except Exception:
+            pass
 
         return self.generate_image_nanobanana2(prompt)
 
@@ -1030,6 +1116,12 @@ class YouTube:
         info(f"\n📝 [Session {session_id}] === STAGE: SUBTITLE GENERATION ===")
         
         provider = str(get_stt_provider() or "local_whisper").lower()
+        try:
+            from providers.registry import is_ninerouter_active
+            if is_ninerouter_active():
+                provider = "ninerouter"
+        except Exception:
+            pass
         if translate_to_english:
             info("    Subtitle mode: English translation")
         info(f"    STT Provider: {provider}")
@@ -1042,8 +1134,37 @@ class YouTube:
                 warning("AssemblyAI provider does not support in-pipeline translation here. Using original transcript for subtitles.")
             return self.generate_subtitles_assemblyai(audio_path)
 
+        if provider == "ninerouter":
+            try:
+                return self.generate_subtitles_ninerouter(audio_path)
+            except Exception as exc:
+                warning(f"9Router STT failed: {exc}")
+                try:
+                    from providers.registry import fallback_to_local
+                    if not fallback_to_local():
+                        raise
+                except ImportError:
+                    pass
+                warning("Falling back to local_whisper for subtitles.")
+                return self.generate_subtitles_local_whisper(audio_path, translate_to_english=translate_to_english)
+
         warning(f"Unknown stt_provider '{provider}'. Falling back to local_whisper.")
         return self.generate_subtitles_local_whisper(audio_path, translate_to_english=translate_to_english)
+
+    def generate_subtitles_ninerouter(self, audio_path: str) -> str:
+        from providers.registry import get_ninerouter, is_ninerouter_active
+
+        if not is_ninerouter_active():
+            raise RuntimeError("9Router provider is not active")
+
+        srt_dir = self._session.audio_dir if self._session else os.path.join(ROOT_DIR, ".mp")
+        srt_path = os.path.join(srt_dir, str(uuid4()) + ".srt")
+        language = _resolve_whisper_language(self._effective_subtitle_language()) or ""
+        get_ninerouter().transcribe_audio(audio_path, srt_path, language=language)
+        if not self._ensure_valid_srt(srt_path, audio_path):
+            raise RuntimeError("9Router transcription did not produce valid SRT subtitles")
+        info(f"    9Router transcription done: {srt_path}")
+        return srt_path
 
     def generate_subtitles_assemblyai(self, audio_path: str) -> str:
         """
@@ -1085,6 +1206,114 @@ class YouTube:
         secs = (total_millis % 60000) // 1000
         millis = total_millis % 1000
         return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+    def _parse_srt_timestamp(self, value: str) -> float:
+        value = value.strip().replace(".", ",")
+        hours_part, minutes_part, rest = value.split(":")
+        seconds_part, millis_part = rest.split(",")
+        return (
+            int(hours_part) * 3600
+            + int(minutes_part) * 60
+            + int(seconds_part)
+            + int(millis_part) / 1000
+        )
+
+    def _load_srt_for_moviepy(self, srt_path: str) -> list[tuple[tuple[float, float], str]]:
+        with open(srt_path, "r", encoding="utf-8-sig") as file:
+            content = file.read()
+
+        subtitles = []
+        blocks = re.split(r"\n\s*\n", content.strip())
+        for block in blocks:
+            lines = [line.strip() for line in block.splitlines() if line.strip()]
+            if not lines:
+                continue
+            if lines[0].isdigit():
+                lines = lines[1:]
+            if not lines or "-->" not in lines[0]:
+                continue
+            start_raw, end_raw = [part.strip() for part in lines[0].split("-->", 1)]
+            text = "\n".join(lines[1:]).strip()
+            if not text:
+                continue
+            subtitles.append(((self._parse_srt_timestamp(start_raw), self._parse_srt_timestamp(end_raw)), text))
+        return subtitles
+
+    def _split_plain_transcript_for_srt(self, transcript: str, max_chars: int = 84) -> list[str]:
+        text = re.sub(r"\s+", " ", transcript or " ").strip()
+        if not text:
+            return []
+
+        chunks: list[str] = []
+        for sentence in re.split(r"(?<=[.!?])\s+", text):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            words = sentence.split()
+            current: list[str] = []
+            for word in words:
+                candidate = " ".join([*current, word])
+                if current and len(candidate) > max_chars:
+                    chunks.append(" ".join(current))
+                    current = [word]
+                else:
+                    current.append(word)
+            if current:
+                chunks.append(" ".join(current))
+        return chunks
+
+    def _convert_plain_transcript_to_srt(self, transcript_path: str, audio_path: str) -> bool:
+        with open(transcript_path, "r", encoding="utf-8-sig") as file:
+            transcript = file.read().strip()
+
+        chunks = self._split_plain_transcript_for_srt(transcript)
+        if not chunks:
+            return False
+
+        duration = self._get_audio_duration() or 0
+        if audio_path and os.path.exists(audio_path):
+            try:
+                audio_clip = AudioFileClip(audio_path)
+                try:
+                    duration = float(audio_clip.duration or duration or 0)
+                finally:
+                    audio_clip.close()
+            except Exception:
+                pass
+        duration = max(duration, float(len(chunks)) * 1.2)
+
+        total_chars = max(1, sum(len(chunk) for chunk in chunks))
+        cursor = 0.0
+        lines: list[str] = []
+        for idx, chunk in enumerate(chunks, start=1):
+            if idx == len(chunks):
+                end = duration
+            else:
+                share = max(1.0, duration * (len(chunk) / total_chars))
+                end = min(duration, cursor + share)
+            if end <= cursor:
+                end = cursor + 1.0
+            lines.extend([
+                str(idx),
+                f"{self._format_srt_timestamp(cursor)} --> {self._format_srt_timestamp(end)}",
+                chunk,
+                "",
+            ])
+            cursor = end
+
+        with open(transcript_path, "w", encoding="utf-8") as file:
+            file.write("\n".join(lines).strip() + "\n")
+        return True
+
+    def _ensure_valid_srt(self, srt_path: str, audio_path: str = "") -> bool:
+        try:
+            if self._load_srt_for_moviepy(srt_path):
+                return True
+            if self._convert_plain_transcript_to_srt(srt_path, audio_path):
+                return bool(self._load_srt_for_moviepy(srt_path))
+        except Exception as exc:
+            warning(f"Subtitle validation failed: {exc}")
+        return False
 
     def generate_subtitles_local_whisper(self, audio_path: str, translate_to_english: bool = False) -> str:
         """
@@ -1130,7 +1359,7 @@ class YouTube:
 
         def _transcribe_to_srt(device: str, compute_type: str, use_language_hint: bool = True, force_transcribe: bool = False) -> str:
             whisper_model_name = get_whisper_model()
-            whisper_language = _resolve_whisper_language(self.language)
+            whisper_language = _resolve_whisper_language(self._effective_subtitle_language())
             # force_transcribe=True means fall back to original-language subtitles
             task_name = "transcribe" if force_transcribe else ("translate" if translate_to_english else "transcribe")
 
@@ -1407,7 +1636,7 @@ class YouTube:
                         )
                     else:
                         if get_verbose():
-                            info(f" => Resizing Image: {image_path} to 1920x1080")
+                            info(f" => Cropping Image: {image_path} to 9:16, then resizing to 1080x1920")
                         clip = clip.cropped(
                             width=round(0.5625 * clip.h),
                             height=clip.h,
@@ -1465,17 +1694,21 @@ class YouTube:
                 except Exception as read_exc:
                     srt_content = ""
                     warning(f"Failed to read subtitle content: {read_exc}")
-                # Keep subtitles inside a bottom safe-area to prevent cropped text.
-                subtitle_position = ("center", 1460) if bool(self.english_cc_bottom) else ("center", 1520)
-                info(
-                    f"    Subtitle render: position={subtitle_position}, "
-                    f"mode={'english_bottom' if bool(self.english_cc_bottom) else 'default'}"
-                )
-                subtitles = SubtitlesClip(subtitles_path, make_textclip=generator).with_position(subtitle_position)
-                if title_duration > 0:
-                    subtitles = subtitles.with_start(title_duration)
-                self.subtitle_path = subtitles_path
-                self.subtitle_preview = self._extract_srt_preview(subtitles_path)
+                moviepy_subtitles = self._load_srt_for_moviepy(subtitles_path)
+                if not moviepy_subtitles:
+                    warning("Subtitle file has no renderable captions; continuing without burned subtitles.")
+                else:
+                    # Keep subtitles inside a bottom safe-area to prevent cropped text.
+                    subtitle_position = ("center", 1460) if bool(self.english_cc_bottom) else ("center", 1520)
+                    info(
+                        f"    Subtitle render: position={subtitle_position}, "
+                        f"mode={'english_bottom' if bool(self.english_cc_bottom) else 'default'}"
+                    )
+                    subtitles = SubtitlesClip(moviepy_subtitles, make_textclip=generator).with_position(subtitle_position)
+                    if title_duration > 0:
+                        subtitles = subtitles.with_start(title_duration)
+                    self.subtitle_path = subtitles_path
+                    self.subtitle_preview = self._extract_srt_preview(subtitles_path)
                 # Save subtitle content to session after preview extraction
                 if self._session:
                     self._session.save_stage(
