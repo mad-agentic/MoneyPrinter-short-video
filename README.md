@@ -28,7 +28,7 @@ Pick a topic. Press **Generate Short**. That's it.
 
 | Stage | What happens | Default engine |
 |---|---|---|
-| 1. Research | Pulls trending ideas and angles from the web | 9Router `search-combo` |
+| 1. Research | Pulls trending ideas and angles from the web | 9Router `tavily/search` |
 | 2. Script | Writes a hook → body → CTA short-form script | Ollama / OpenAI-compatible |
 | 3. Images | Generates 9:16 scene images for every beat | Gemini image preview |
 | 4. Voice | Reads the script in the chosen language/voice | KittenTTS / Edge-TTS / Gemini TTS |
@@ -116,6 +116,8 @@ start_hub.bat
 
 Open **http://localhost:5174** and you are live.
 
+`start_hub.bat` checks backend port `15001` and frontend port `5174` before launch. If another process owns either port, stop that process or change ports before starting the hub.
+
 Need the full local setup guide? Read [`docs/PROJECT_USAGE_VN.md`](docs/PROJECT_USAGE_VN.md).
 
 > Backend API: `http://127.0.0.1:15001` · Frontend UI: `http://localhost:5174`
@@ -155,6 +157,8 @@ Need the full local setup guide? Read [`docs/PROJECT_USAGE_VN.md`](docs/PROJECT_
 5. Run `start_hub.bat` for normal use.
 6. Open `http://localhost:5174`.
 7. In Settings, verify provider, model, voice, ImageMagick, FFmpeg, and browser paths before generating or publishing.
+
+Manual review is the default publish mode. Auto publish should be enabled only after account paths, metadata, and output video are verified.
 
 Manual debug commands:
 
@@ -197,7 +201,7 @@ Compose once. Publish to:
 
 - **YouTube Shorts** — full Selenium automation, scheduled, manual-review gate
 - **Twitter/X** — auto-tweet from the same content
-- **TikTok + Instagram** — via PostBridge cross-poster
+- **TikTok + Instagram** — available through PostBridge when `post_bridge.enabled`, API key, platforms, and account IDs are configured.
 - **Affiliate links** — Amazon product pitches auto-pushed to X
 
 ---

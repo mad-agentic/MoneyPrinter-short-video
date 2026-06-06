@@ -94,6 +94,7 @@ from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import ElementClickInterceptedException
 from moviepy.video.tools.subtitles import SubtitlesClip
 from webdriver_manager.firefox import GeckoDriverManager
 from datetime import datetime
@@ -2070,6 +2071,28 @@ class YouTube:
 
             time.sleep(0.5)
 
+            def _dismiss_youtube_overlays() -> None:
+                try:
+                    driver.switch_to.active_element.send_keys(Keys.ESCAPE)
+                    time.sleep(0.2)
+                    driver.execute_script("document.activeElement && document.activeElement.blur();")
+                    time.sleep(0.2)
+                except Exception:
+                    pass
+
+            def _click_youtube_option(el) -> None:
+                _dismiss_youtube_overlays()
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block: 'center', inline: 'center'});",
+                    el,
+                )
+                time.sleep(0.35)
+                try:
+                    el.click()
+                except ElementClickInterceptedException:
+                    _dismiss_youtube_overlays()
+                    driver.execute_script("arguments[0].click();", el)
+
             # Set `made for kids` option
             if verbose:
                 info("\t=> Setting `made for kids` option...")
@@ -2084,9 +2107,9 @@ class YouTube:
             resolved_is_for_kids = get_is_for_kids() if is_for_kids_override is None else bool(is_for_kids_override)
 
             if not resolved_is_for_kids:
-                is_not_for_kids_checkbox.click()
+                _click_youtube_option(is_not_for_kids_checkbox)
             else:
-                is_for_kids_checkbox.click()
+                _click_youtube_option(is_for_kids_checkbox)
 
             time.sleep(0.5)
 

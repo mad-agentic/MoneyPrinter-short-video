@@ -539,9 +539,13 @@ def get_openai_api_key() -> str:
         configured = _load_config_json(file).get("openai_api_key", "")
         return configured or os.environ.get("OPENAI_API_KEY", "none")
 
+def get_config() -> dict:
+    """Return the parsed local config.json with UTF-8 BOM tolerance."""
+    with open(os.path.join(ROOT_DIR, "config.json"), "r", encoding="utf-8-sig") as file:
+        return json.load(file)
+
 def _read_config_json() -> dict:
-    with open(os.path.join(ROOT_DIR, "config.json"), "r") as file:
-        return _load_config_json(file)
+    return get_config()
 
 def _default_ninerouter_config(config_json: dict | None = None) -> dict:
     config_json = config_json or {}

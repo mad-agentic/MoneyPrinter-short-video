@@ -28,7 +28,7 @@ Chọn chủ đề. Bấm **Generate Short**. Xong.
 
 | Stage | Công việc | Engine mặc định |
 |---|---|---|
-| 1. Research | Kéo trend và góc khai thác từ web | 9Router `search-combo` |
+| 1. Research | Kéo trend và góc khai thác từ web | 9Router `tavily/search` |
 | 2. Script | Viết script ngắn: hook → thân → CTA | Ollama / OpenAI-compatible |
 | 3. Ảnh | Sinh ảnh 9:16 cho từng beat | Gemini image preview |
 | 4. Giọng đọc | Đọc script theo ngôn ngữ/voice đã chọn | KittenTTS / Edge-TTS / Gemini TTS |
@@ -118,6 +118,8 @@ Can huong dan setup day du? Doc [`docs/PROJECT_USAGE_VN.md`](docs/PROJECT_USAGE_
 
 Mở **http://localhost:5174** là chạy được luôn.
 
+`start_hub.bat` kiểm tra port backend `15001` và frontend `5174` trước khi chạy. Nếu port đang bị process khác giữ, hãy tắt process đó hoặc đổi port trước khi mở hub.
+
 > Backend API: `http://127.0.0.1:15001` · Frontend UI: `http://localhost:5174`
 
 ---
@@ -144,7 +146,7 @@ Compose một lần. Đăng lên:
 
 - **YouTube Shorts** — Selenium tự động, có lịch, có cổng review
 - **Twitter/X** — auto-tweet cùng nội dung
-- **TikTok + Instagram** — qua PostBridge cross-poster
+- **TikTok + Instagram** — dùng qua PostBridge khi đã cấu hình `post_bridge.enabled`, API key, platforms và account IDs.
 - **Affiliate links** — pitch sản phẩm Amazon auto-push lên X
 
 ---
@@ -192,6 +194,8 @@ Compose một lần. Đăng lên:
 5. Chay `start_hub.bat` khi dung hang ngay.
 6. Mo `http://localhost:5174`.
 7. Vao Settings kiem tra provider, model, voice, ImageMagick, FFmpeg, browser path truoc khi generate/upload.
+
+Manual review la che do mac dinh. Chi bat auto publish sau khi da kiem tra account path, metadata va video output.
 
 Lenh debug rieng tung phan:
 

@@ -1,6 +1,7 @@
 __pycache__
 config.json
 .mp/
+.crawl4ai/
 venv/
 Songs/
 google-maps-scraper-0.9.7/

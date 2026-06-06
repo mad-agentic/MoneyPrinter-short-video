@@ -159,6 +159,8 @@ Cách chuẩn:
 start_hub.bat
 ```
 
+Luu y: `start_hub.bat` se kiem tra port `15001` va `5174`. Neu port dang bi process khac giu, script co the dung process do truoc khi mo backend/frontend moi. Neu dang chay service quan trong tren hai port nay, hay tat thu cong hoac doi port truoc.
+
 Sau đó mở:
 
 ```text
@@ -202,6 +204,8 @@ Làm theo thứ tự này để ít lỗi nhất:
 15. Chỉ upload khi video và metadata đã đúng.
 
 Nguyên tắc an toàn: bật manual review. Không auto publish khi chưa xem video.
+
+Manual review la che do mac dinh. Chi bat auto publish sau khi da kiem tra account path, metadata va video output.
 
 ## 7. Workflow Research & Ideas
 
@@ -403,6 +407,24 @@ Kiểm tra:
 - `providers.ninerouter.api_key` đúng với server auth mode.
 
 Nếu endpoint voice list lỗi, vẫn có thể nhập voice thủ công nếu provider hỗ trợ.
+
+### Loi 9Router model sai capability
+
+Vi du:
+
+```text
+Provider 'codex' does not support STT
+Unknown provider: search-combo
+```
+
+Y nghia: model/provider dang chon khong ho tro dung chuc nang. Chat model khong dung thay cho STT/TTS/search duoc neu 9Router khong map capability do.
+
+Cach xu ly:
+
+1. Voi search, dung `providers.ninerouter.search_model = "tavily/search"` hoac model co trong `/v1/models/web`.
+2. Voi STT, dung model co trong `/v1/models/stt`; neu chua chac, dat `stt_provider = "local_whisper"`.
+3. Voi TTS, dung model co trong `/v1/models/tts`; tieng Viet nen dung `edge-tts/vi-VN-HoaiMyNeural` neu server ho tro.
+4. Khong dien chat model nhu `cx/gpt-5.5` vao `stt_model` hoac `tts_model` tru khi `/v1/models/stt` hoac `/v1/models/tts` liet ke dung model do.
 
 ### Backend hoặc frontend không lên
 

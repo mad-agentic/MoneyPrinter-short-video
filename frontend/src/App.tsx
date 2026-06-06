@@ -189,6 +189,63 @@ interface ResearchIdeaPrefill {
   target_audience?: string;
 }
 
+interface NineRouterConfig {
+  enabled: boolean;
+  base_url: string;
+  api_key: string;
+  chat_model: string;
+  image_model: string;
+  image_size: string;
+  tts_model: string;
+  tts_voice: string;
+  tts_response_format: string;
+  stt_model: string;
+  stt_response_format: string;
+  search_model: string;
+  search_max_results: number;
+}
+
+interface ProvidersConfig {
+  ninerouter: NineRouterConfig;
+  local: { enabled: boolean };
+  [key: string]: unknown;
+}
+
+interface AiProviderConfig {
+  active: string;
+  fallback_to_local: boolean;
+}
+
+interface AppConfig {
+  verbose: boolean;
+  headless: boolean;
+  threads: number;
+  is_for_kids: boolean;
+  stt_provider: string;
+  whisper_model: string;
+  whisper_device: string;
+  whisper_compute_type: string;
+  whisper_vad_filter: boolean;
+  whisper_beam_size: number;
+  tts_engine: string;
+  tts_fallback_engine: string;
+  tts_voice: string;
+  tts_strict_mode: boolean;
+  enable_title_audio: boolean;
+  video_encode_preset: string;
+  video_encode_crf: number;
+  script_sentence_length: number;
+  font: string;
+  llm_backend: string;
+  ollama_base_url: string;
+  ollama_model: string;
+  openai_base_url: string;
+  openai_model: string;
+  openai_api_key: string;
+  ai_provider: AiProviderConfig;
+  providers: ProvidersConfig;
+}
+
 const getSessionLabel = (session: SessionSummary): string => session.name || session.session_id.slice(0, 6);
 
 const mapStageToProgressStep = (stage: string): string => {
@@ -1160,7 +1217,7 @@ function ConfigWorkspace() {
   const [sttModelsError, setSttModelsError] = useState('');
   const [voicesError, setVoicesError] = useState('');
   const [webModelsError, setWebModelsError] = useState('');
-  const [cfg, setCfg] = useState({
+  const [cfg, setCfg] = useState<AppConfig>({
     verbose: false,
     headless: false,
     threads: 2,
@@ -1200,7 +1257,7 @@ function ConfigWorkspace() {
         tts_response_format: 'wav',
         stt_model: 'gemini/gemini-2.5-flash',
         stt_response_format: 'srt',
-        search_model: 'search-combo',
+        search_model: 'tavily/search',
         search_max_results: 10,
       },
       local: { enabled: true },
@@ -1354,7 +1411,8 @@ function ConfigWorkspace() {
       if (models.length === 0) {
         setWebModelsError('No web search models found. Check 9Router search providers.');
       } else if (!models.includes(String(nrCfg.search_model || ''))) {
-        updateNineRouter({ search_model: models.includes('search-combo') ? 'search-combo' : models[0] });
+        const preferredSearchModel = models.includes('tavily/search') ? 'tavily/search' : models[0];
+        updateNineRouter({ search_model: preferredSearchModel });
       }
     } catch (err) {
       setWebModelsError((err as Error)?.message || 'Could not connect to 9Router web models.');
@@ -1368,8 +1426,8 @@ function ConfigWorkspace() {
     setSaving(true);
     setSaveMsg('');
     try {
-      const currentProviders = (cfg as any).providers || {};
-      const currentNineRouter = currentProviders.ninerouter || {};
+      const currentProviders = cfg.providers;
+      const currentNineRouter = currentProviders.ninerouter;
       const openaiBase = String(cfg.openai_base_url || 'http://localhost:20128/v1').replace(/\/+$/, '');
       const openaiNrBase = openaiBase.replace(/\/v1$/, '') || 'http://localhost:20128';
       const currentNrBase = String(currentNineRouter.base_url || '').replace(/\/+$/, '');
@@ -1388,7 +1446,7 @@ function ConfigWorkspace() {
         tts_response_format: String(currentNineRouter.tts_response_format || 'wav'),
         stt_model: String(currentNineRouter.stt_model || 'gemini/gemini-2.5-flash'),
         stt_response_format: String(currentNineRouter.stt_response_format || 'srt'),
-        search_model: String(currentNineRouter.search_model || 'search-combo'),
+        search_model: String(currentNineRouter.search_model || 'tavily/search'),
         search_max_results: Math.max(1, Number(currentNineRouter.search_max_results) || 10),
       };
       const payload = {
@@ -1403,8 +1461,8 @@ function ConfigWorkspace() {
           whisper_compute_type: String(cfg.whisper_compute_type || 'int8'),
           whisper_vad_filter: !!cfg.whisper_vad_filter,
           whisper_beam_size: Math.max(1, Number(cfg.whisper_beam_size) || 1),
-          tts_engine: String((cfg as any).tts_engine || 'kitten'),
-          tts_fallback_engine: String((cfg as any).tts_fallback_engine || 'kitten'),
+          tts_engine: String(cfg.tts_engine || 'kitten'),
+          tts_fallback_engine: String(cfg.tts_fallback_engine || 'kitten'),
           tts_voice: String(cfg.tts_voice || 'Jasper'),
           tts_strict_mode: !!cfg.tts_strict_mode,
           enable_title_audio: cfg.enable_title_audio !== undefined ? !!cfg.enable_title_audio : true,
@@ -1420,7 +1478,7 @@ function ConfigWorkspace() {
           openai_api_key: String(cfg.openai_api_key || 'none'),
           ai_provider: {
             active: cfg.llm_backend === 'openai_compatible' ? 'ninerouter' : '',
-            fallback_to_local: !!((cfg as any).ai_provider?.fallback_to_local ?? true),
+            fallback_to_local: !!(cfg.ai_provider?.fallback_to_local ?? true),
           },
           providers: {
             ...currentProviders,
@@ -1446,28 +1504,28 @@ function ConfigWorkspace() {
     }
   };
 
-  const nrCfg = ((cfg as any).providers?.ninerouter || {}) as Record<string, any>;
-  const updateNineRouter = (patch: Record<string, any>) => {
+  const nrCfg = cfg.providers.ninerouter;
+  const updateNineRouter = (patch: Partial<NineRouterConfig>) => {
     setCfg(prev => ({
       ...prev,
       providers: {
-        ...((prev as any).providers || {}),
+        ...prev.providers,
         ninerouter: {
-          ...(((prev as any).providers || {}).ninerouter || {}),
+          ...prev.providers.ninerouter,
           ...patch,
         },
         local: { enabled: true },
       },
-    } as any));
+    }));
   };
-  const updateAiProvider = (patch: Record<string, any>) => {
+  const updateAiProvider = (patch: Partial<AiProviderConfig>) => {
     setCfg(prev => ({
       ...prev,
       ai_provider: {
-        ...((prev as any).ai_provider || {}),
+        ...prev.ai_provider,
         ...patch,
       },
-    } as any));
+    }));
   };
 
   if (loading) {
@@ -1634,7 +1692,7 @@ function ConfigWorkspace() {
               <label className="text-xs text-slate-300 flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={!!((cfg as any).ai_provider?.fallback_to_local ?? true)}
+                  checked={!!(cfg.ai_provider?.fallback_to_local ?? true)}
                   onChange={e => updateAiProvider({ fallback_to_local: e.target.checked })}
                 />
                 Fallback to local providers
@@ -1843,7 +1901,7 @@ function ConfigWorkspace() {
 
           <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1" title="Primary TTS engine. kitten = fast/lightweight; omnivoice = high quality but requires GPU.">TTS engine</p>
-            <select value={(cfg as any).tts_engine || 'kitten'} onChange={e => setCfg(prev => ({ ...prev, tts_engine: e.target.value } as any))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
+            <select value={cfg.tts_engine || 'kitten'} onChange={e => setCfg(prev => ({ ...prev, tts_engine: e.target.value }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
               <option value="kitten">kitten (fast, recommended)</option>
               <option value="omnivoice">omnivoice (high quality, needs GPU)</option>
               <option value="ninerouter">ninerouter (9Router cloud)</option>
@@ -1852,7 +1910,7 @@ function ConfigWorkspace() {
 
           <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1" title="Fallback TTS engine if primary fails.">TTS fallback engine</p>
-            <select value={(cfg as any).tts_fallback_engine || 'kitten'} onChange={e => setCfg(prev => ({ ...prev, tts_fallback_engine: e.target.value } as any))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
+            <select value={cfg.tts_fallback_engine || 'kitten'} onChange={e => setCfg(prev => ({ ...prev, tts_fallback_engine: e.target.value }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
               <option value="kitten">kitten</option>
               <option value="omnivoice">omnivoice</option>
               <option value="ninerouter">ninerouter</option>
@@ -2535,7 +2593,6 @@ function YouTubeWorkspace({
         return englishVoices.includes(prev) ? prev : englishVoices[0];
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ttsEngine]);
 
   useEffect(() => {

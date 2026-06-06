@@ -133,7 +133,6 @@ class NineRouterProvider:
             return configured_model
 
         preferred = (
-            "search-combo",
             "tavily/search",
             "tavily",
             "brave-search/search",
@@ -144,6 +143,7 @@ class NineRouterProvider:
             "exa",
             "perplexity/search",
             "perplexity",
+            "search-combo",
         )
         for model in preferred:
             if model in models:

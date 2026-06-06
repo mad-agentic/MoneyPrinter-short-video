@@ -22,5 +22,6 @@ fastapi
 uvicorn
 openai>=1.0.0
 ddgs
+crawl4ai==0.8.9
 # Optional multilingual TTS provider (recommended for Vietnamese):
 omnivoice
