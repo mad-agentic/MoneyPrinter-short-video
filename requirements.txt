@@ -25,3 +25,5 @@ ddgs
 crawl4ai==0.8.9
 # Optional multilingual TTS provider (recommended for Vietnamese):
 omnivoice
+transformers>=5.3.0
+soxr

@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 
 import status as _status
+from content_engine import label_source
 
 def log(level: str, message: str) -> None:
     """Proxy to status module using level string."""
@@ -129,7 +130,7 @@ def _format_results_for_prompt(sources: dict, max_chars: int = 6000) -> str:
     for source, results in sources.items():
         if not results:
             continue
-        label = source_labels.get(source, source.title())
+        label = label_source(source)
         lines.append(f"\n### {label} ({len(results)} kết quả)")
         for r in results:
             title = r.get("title", "").strip()

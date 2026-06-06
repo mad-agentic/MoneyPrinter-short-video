@@ -351,6 +351,32 @@ def find_session_by_subject(subject: str) -> Optional[SessionManager]:
     return SessionManager(matched_session_id)
 
 
+def find_session_by_fingerprint(fingerprint: str) -> Optional[SessionManager]:
+    needle = str(fingerprint or "").strip()
+    if not needle:
+        return None
+
+    sessions_root = _sessions_dir()
+    candidates = []
+    for name in os.listdir(sessions_root):
+        meta_path = os.path.join(sessions_root, name, "session.json")
+        if not os.path.exists(meta_path):
+            continue
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            if str(meta.get("content_fingerprint", "")).strip() == needle:
+                candidates.append((meta.get("created_at", ""), str(meta.get("session_id", "")).strip()))
+        except Exception:
+            continue
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    matched_session_id = candidates[0][1]
+    if not matched_session_id:
+        return None
+    return SessionManager(matched_session_id)
+
 def list_sessions() -> list:
     sessions_root = _sessions_dir()
     result = []

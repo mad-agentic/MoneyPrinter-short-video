@@ -58,12 +58,6 @@ class TTS:
         self._language = (language or get_tts_language() or "auto").strip().lower()
         self._engine = (get_tts_engine() or "kitten").strip().lower()
         self._fallback_engine = (get_tts_fallback_engine() or "kitten").strip().lower()
-        try:
-            from providers.registry import is_ninerouter_active
-            if is_ninerouter_active():
-                self._engine = "ninerouter"
-        except Exception:
-            pass
         self._kitten_model = None
         self._omnivoice_model = None
         self._strict_mode = get_tts_strict_mode()

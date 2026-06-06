@@ -273,7 +273,7 @@ EDITABLE_CONFIG_KEYS = {
     "tts_language",
     "tts_sample_rate",
     "omnivoice_model",
-    "omnivoice_device",
+    "omnivoice_device_map",
     "omnivoice_dtype",
     "omnivoice_instruct",
     "video_encode_preset",
@@ -291,6 +291,8 @@ EDITABLE_CONFIG_KEYS = {
     "providers",
 }
 
+FONT_EXTENSIONS = {".ttf", ".otf", ".ttc"}
+
 
 def _read_config() -> dict[str, Any]:
     if not os.path.exists(CONFIG_PATH):
@@ -303,6 +305,20 @@ def _write_config(payload: dict[str, Any]) -> None:
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
         f.write("\n")
+
+@app.get("/system/fonts")
+def list_system_fonts():
+    fonts_dir = os.path.join(ROOT_DIR, "fonts")
+    if not os.path.isdir(fonts_dir):
+        return {"fonts": []}
+
+    fonts = [
+        name
+        for name in os.listdir(fonts_dir)
+        if os.path.isfile(os.path.join(fonts_dir, name))
+        and os.path.splitext(name)[1].lower() in FONT_EXTENSIONS
+    ]
+    return {"fonts": sorted(fonts, key=str.lower)}
 
 
 @app.get("/system/config")

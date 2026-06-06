@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import hashlib
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, List, Optional
 
 import requests
@@ -63,10 +64,33 @@ def _resolve_whisper_language(language: str) -> Optional[str]:
         return lang
     return _WHISPER_LANGUAGE_NAME_TO_CODE.get(lang)
 
+_VIETNAMESE_CODEPOINTS = {
+    0x0102, 0x0103, 0x00C2, 0x00E2, 0x0110, 0x0111, 0x00CA, 0x00EA,
+    0x00D4, 0x00F4, 0x01A0, 0x01A1, 0x01AF, 0x01B0,
+    *range(0x1EA0, 0x1EFA),
+}
+
 def _looks_vietnamese_text(text: str) -> bool:
-    sample = (text or "").lower()
-    vietnamese_chars = set("ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ")
-    return any(ch in vietnamese_chars for ch in sample)
+    return any(ord(ch) in _VIETNAMESE_CODEPOINTS for ch in str(text or ""))
+
+def _resolve_subtitle_font_path(configured_font_path: str, text: str = "") -> str:
+    if _looks_vietnamese_text(text):
+        for candidate in (
+            os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "arialbd.ttf"),
+            os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "segoeuib.ttf"),
+            os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "calibrib.ttf"),
+        ):
+            if os.path.exists(candidate):
+                return candidate
+    return configured_font_path
+
+def _render_subtitle_text(text: str, max_chars: int = 28, max_lines: int = 3) -> str:
+    limit = max(18, int(max_chars or 28))
+    lines = split_single_line_caption(text, max_chars=limit)
+    while len(lines) > max_lines and limit < 46:
+        limit += 4
+        lines = split_single_line_caption(text, max_chars=limit)
+    return "\n".join(lines)
 
 from utils import *
 from cache import *
@@ -74,6 +98,7 @@ from .Tts import TTS
 from llm_provider import generate_text
 from config import *
 from status import *
+from subtitles.formatting import normalize_caption_text, split_single_line_caption
 from uuid import uuid4
 from constants import *
 from moviepy import (
@@ -160,6 +185,7 @@ class YouTube:
         self.voice_used: str = ""
         self.english_cc_bottom: bool = False
         self.enable_cc: bool = True  # When False, subtitles are not generated or burned into the video
+        self.cc_mode: str = "auto"  # auto | script | whisper
         self.title_tts_path: str = ""
         self.title_image_path: str = ""
         self.title_narration_text: str = ""
@@ -901,6 +927,67 @@ class YouTube:
 
         return self.generate_image_nanobanana2(prompt)
 
+    def _generate_images_parallel(self, prompts: List[str], max_workers: int) -> tuple[List[str], int]:
+        """Generate scene images concurrently while preserving prompt order in self.images."""
+        prompts = list(prompts or [])
+        if not prompts:
+            return [], 0
+
+        try:
+            worker_count = int(max_workers or 1)
+        except Exception:
+            worker_count = 1
+        worker_count = max(1, min(worker_count, 4, len(prompts)))
+
+        base_images = list(self.images)
+        results: list[Optional[str]] = [None] * len(prompts)
+        failures = 0
+
+        if worker_count == 1:
+            for idx, prompt in enumerate(prompts, 1):
+                info(f"    [{idx}/{len(prompts)}] {prompt[:60]}...")
+                started_at = time.perf_counter()
+                generated_image_path = self.generate_image(prompt)
+                elapsed = time.perf_counter() - started_at
+                if generated_image_path:
+                    info(f"    [{idx}/{len(prompts)}] Image done in {elapsed:.1f}s")
+                    results[idx - 1] = generated_image_path
+                else:
+                    failures += 1
+            ordered_paths = [path for path in results if path]
+            self.images = base_images + ordered_paths
+            return ordered_paths, failures
+
+        info(f"    Generating {len(prompts)} scene images with {worker_count} worker(s)...")
+
+        def generate_one(index: int, prompt: str) -> tuple[int, Optional[str], float]:
+            started_at = time.perf_counter()
+            return index, self.generate_image(prompt), time.perf_counter() - started_at
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            future_map = {
+                executor.submit(generate_one, idx, prompt): (idx, prompt)
+                for idx, prompt in enumerate(prompts, 1)
+            }
+            for future in as_completed(future_map):
+                idx, prompt = future_map[future]
+                try:
+                    result_idx, path, elapsed = future.result()
+                except Exception as exc:
+                    failures += 1
+                    warning(f"    [{idx}/{len(prompts)}] Image failed: {exc}")
+                    continue
+                if path:
+                    results[result_idx - 1] = path
+                    info(f"    [{result_idx}/{len(prompts)}] Image done in {elapsed:.1f}s: {prompt[:60]}...")
+                else:
+                    failures += 1
+                    warning(f"    [{result_idx}/{len(prompts)}] Image generation returned no file: {prompt[:60]}...")
+
+        ordered_paths = [path for path in results if path]
+        self.images = base_images + ordered_paths
+        return ordered_paths, failures
+
     def generate_script_to_speech(self, tts_instance: TTS, force_regenerate: bool = False) -> str:
         """
         Converts the generated script into Speech. Checks session cache first.
@@ -1025,7 +1112,9 @@ class YouTube:
             for line in raw_lines:
                 if not line or line.isdigit() or "-->" in line:
                     continue
-                text_lines.append(line)
+                normalized = normalize_caption_text(line)
+                if normalized:
+                    text_lines.append(normalized)
 
             return "\n".join(text_lines[:max_lines]).strip()
         except Exception:
@@ -1127,8 +1216,25 @@ class YouTube:
             info("    Subtitle mode: English translation")
         info(f"    STT Provider: {provider}")
 
+        mode = str(getattr(self, "cc_mode", "auto") or "auto").strip().lower()
+        if mode not in {"auto", "script", "whisper"}:
+            mode = "auto"
+        if mode == "auto":
+            mode = "whisper" if translate_to_english else "script"
+        info(f"    CC mode: {mode}")
+        if mode == "script":
+            if translate_to_english:
+                warning("Script CC cannot translate subtitles. Using Whisper CC for English subtitle mode.")
+            else:
+                return self.generate_subtitles_from_script(audio_path)
+
         if provider == "local_whisper":
             return self.generate_subtitles_local_whisper(audio_path, translate_to_english=translate_to_english)
+
+        if provider == "whisperx":
+            if translate_to_english:
+                warning("WhisperX provider does not support in-pipeline translation here. Using original transcript for subtitles.")
+            return self.generate_subtitles_whisperx(audio_path)
 
         if provider == "third_party_assemblyai":
             if translate_to_english:
@@ -1152,6 +1258,27 @@ class YouTube:
         warning(f"Unknown stt_provider '{provider}'. Falling back to local_whisper.")
         return self.generate_subtitles_local_whisper(audio_path, translate_to_english=translate_to_english)
 
+    def generate_subtitles_from_script(self, audio_path: str) -> str:
+        from subtitles.script_srt import build_script_srt
+
+        srt_dir = self._session.audio_dir if self._session else os.path.join(ROOT_DIR, ".mp")
+        srt_path = os.path.join(srt_dir, str(uuid4()) + ".srt")
+        duration = self._get_audio_duration() or 0
+        if audio_path and os.path.exists(audio_path):
+            audio_clip = AudioFileClip(audio_path)
+            try:
+                duration = float(audio_clip.duration or duration or 0)
+            finally:
+                audio_clip.close()
+        srt_content = build_script_srt(self.script, duration_seconds=duration)
+        if not srt_content.strip():
+            raise RuntimeError("Script CC requested but script text is empty")
+        with open(srt_path, "w", encoding="utf-8") as file:
+            file.write(srt_content)
+        if not self._ensure_valid_srt(srt_path, audio_path):
+            raise RuntimeError("Script CC did not produce valid SRT subtitles")
+        info(f"    Script CC generated from normalized text: {srt_path}")
+        return srt_path
     def generate_subtitles_ninerouter(self, audio_path: str) -> str:
         from providers.registry import get_ninerouter, is_ninerouter_active
 
@@ -1234,14 +1361,14 @@ class YouTube:
             if not lines or "-->" not in lines[0]:
                 continue
             start_raw, end_raw = [part.strip() for part in lines[0].split("-->", 1)]
-            text = "\n".join(lines[1:]).strip()
+            text = normalize_caption_text("\n".join(lines[1:]))
             if not text:
                 continue
             subtitles.append(((self._parse_srt_timestamp(start_raw), self._parse_srt_timestamp(end_raw)), text))
         return subtitles
 
     def _split_plain_transcript_for_srt(self, transcript: str, max_chars: int = 84) -> list[str]:
-        text = re.sub(r"\s+", " ", transcript or " ").strip()
+        text = normalize_caption_text(transcript)
         if not text:
             return []
 
@@ -1315,6 +1442,91 @@ class YouTube:
         except Exception as exc:
             warning(f"Subtitle validation failed: {exc}")
         return False
+
+    def generate_subtitles_whisperx(self, audio_path: str) -> str:
+        """Generate subtitles using optional WhisperX package."""
+        try:
+            import whisperx  # type: ignore[import-not-found]
+        except ImportError:
+            error(
+                "WhisperX STT selected but 'whisperx' is not installed. "
+                "Install whisperx or switch stt_provider to local_whisper."
+            )
+            raise
+
+        configured_device = str(get_whisper_device() or "auto").lower()
+        if configured_device == "auto":
+            try:
+                import torch
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+            except Exception:
+                device = "cpu"
+        else:
+            device = configured_device
+
+        compute_type = str(get_whisper_compute_type() or "int8").lower()
+        if device == "cpu" and compute_type == "float16":
+            compute_type = "int8"
+
+        whisper_model_name = get_whisper_model()
+        whisper_language = _resolve_whisper_language(self._effective_subtitle_language())
+        info(
+            f"    Loading WhisperX model='{whisper_model_name}' "
+            f"device='{device}' compute='{compute_type}'"
+        )
+        if whisper_language:
+            info(f"    WhisperX language hint: {whisper_language}")
+
+        started_at = time.time()
+        model = whisperx.load_model(
+            whisper_model_name,
+            device,
+            compute_type=compute_type,
+            language=whisper_language,
+        )
+        result = model.transcribe(audio_path, batch_size=16)
+
+        detected_lang = str(result.get("language") or whisper_language or "unknown")
+        try:
+            align_model, metadata = whisperx.load_align_model(language_code=detected_lang, device=device)
+            result = whisperx.align(
+                result.get("segments", []),
+                align_model,
+                metadata,
+                audio_path,
+                device,
+                return_char_alignments=False,
+            )
+            info(f"    WhisperX alignment ready: language={detected_lang}")
+        except Exception as align_exc:
+            warning(f"WhisperX alignment failed; using raw segments: {align_exc}")
+
+        segments = result.get("segments", []) or []
+        lines: list[str] = []
+        emitted_segments = 0
+        for idx, segment in enumerate(segments, start=1):
+            text = normalize_caption_text(segment.get("text", ""))
+            if not text:
+                continue
+            start = self._format_srt_timestamp(float(segment.get("start", 0) or 0))
+            end = self._format_srt_timestamp(float(segment.get("end", 0) or 0))
+            emitted_segments += 1
+            lines.extend([str(idx), f"{start} --> {end}", text, ""])
+
+        srt_dir = self._session.audio_dir if self._session else os.path.join(ROOT_DIR, ".mp")
+        srt_path = os.path.join(srt_dir, str(uuid4()) + ".srt")
+        with open(srt_path, "w", encoding="utf-8") as file:
+            file.write("\n".join(lines).strip() + "\n")
+
+        if not self._ensure_valid_srt(srt_path, audio_path):
+            raise RuntimeError("WhisperX did not produce valid SRT subtitles")
+
+        info(
+            f"    WhisperX transcription done: {emitted_segments} segment(s) "
+            f"in {time.time()-started_at:.1f}s"
+        )
+        info(f"    Subtitle file: {srt_path}")
+        return srt_path
 
     def generate_subtitles_local_whisper(self, audio_path: str, translate_to_english: bool = False) -> str:
         """
@@ -1417,7 +1629,7 @@ class YouTube:
             for idx, segment in enumerate(segments, start=1):
                 start = self._format_srt_timestamp(segment.start)
                 end = self._format_srt_timestamp(segment.end)
-                text = str(segment.text).strip()
+                text = normalize_caption_text(segment.text)
 
                 if not text:
                     continue
@@ -1548,30 +1760,42 @@ class YouTube:
             text_len = len((text or "").strip())
             if bool(self.english_cc_bottom):
                 if text_len > 120:
-                    return 48
+                    return 42
                 if text_len > 90:
-                    return 52
+                    return 46
                 if text_len > 60:
-                    return 56
-                return 60
+                    return 50
+                return 54
 
             if text_len > 120:
-                return 64
+                return 50
             if text_len > 80:
-                return 70
-            return 76
+                return 56
+            if text_len > 48:
+                return 62
+            return 66
 
         def generator(txt: str) -> TextClip:
-            subtitle_box = (980, 320) if bool(self.english_cc_bottom) else (980, 280)
+            render_text = _render_subtitle_text(
+                txt,
+                max_chars=30 if bool(self.english_cc_bottom) else 28,
+                max_lines=3,
+            )
+            subtitle_box = (1000, 420) if bool(self.english_cc_bottom) else (1000, 380)
+            resolved_font_path = _resolve_subtitle_font_path(subtitle_font_path, txt)
             return TextClip(
-                text=txt,
-                font=subtitle_font_path,
+                text=render_text,
+                font=resolved_font_path,
                 font_size=_subtitle_font_size(txt),
                 color="#FFFF00",
                 stroke_color="black",
-                stroke_width=5,
+                stroke_width=4,
                 size=subtitle_box,
                 method="caption",
+                text_align="center",
+                horizontal_align="center",
+                vertical_align="center",
+                interline=6,
             )
 
         print(colored("[+] Combining images...", "blue"))
@@ -1683,11 +1907,6 @@ class YouTube:
                     self.tts_path,
                     translate_to_english=bool(self.english_cc_bottom),
                 )
-                try:
-                    equalize_subtitles(subtitles_path, 10)
-                except Exception as eq_exc:
-                    # Keep original subtitles if equalizer rejects absolute paths or fails.
-                    warning(f"Subtitle equalizer failed, using raw subtitles: {eq_exc}")
                 # Read subtitle text content for session persistence
                 try:
                     with open(subtitles_path, "r", encoding="utf-8") as srt_file:
@@ -1700,7 +1919,7 @@ class YouTube:
                     warning("Subtitle file has no renderable captions; continuing without burned subtitles.")
                 else:
                     # Keep subtitles inside a bottom safe-area to prevent cropped text.
-                    subtitle_position = ("center", 1460) if bool(self.english_cc_bottom) else ("center", 1520)
+                    subtitle_position = ("center", 1320) if bool(self.english_cc_bottom) else ("center", 1360)
                     info(
                         f"    Subtitle render: position={subtitle_position}, "
                         f"mode={'english_bottom' if bool(self.english_cc_bottom) else 'default'}"
@@ -1879,12 +2098,11 @@ class YouTube:
                 else:
                     warning("Could not generate title cover image. Falling back to regular first image.")
             
-            image_generation_failures = 0
-            for idx, prompt in enumerate(self.image_prompts, 1):
-                info(f"    [{idx}/{len(self.image_prompts)}] {prompt[:60]}...")
-                generated_image_path = self.generate_image(prompt)
-                if not generated_image_path:
-                    image_generation_failures += 1
+            try:
+                image_workers = get_threads()
+            except Exception:
+                image_workers = 2
+            _, image_generation_failures = self._generate_images_parallel(self.image_prompts, image_workers)
 
             self._save_resume_state("images")
 

@@ -4,16 +4,78 @@ import ResearchWorkspace from './ResearchWorkspace';
 
 const API = 'http://127.0.0.1:15001';
 const DRAFT_SESSION_KEY = '__draft__';
-const VOICE_OPTIONS = ['Jasper', 'Luna', 'Milo', 'Ava', 'Emma', 'vi-VN-HoaiMyNeural', 'vi-VN-NamMinhNeural'];
+const KITTEN_VOICE_OPTIONS = ['Jasper', 'Luna', 'Milo', 'Ava', 'Emma'];
+const OMNIVOICE_VOICE_OPTIONS = ['Jasper', 'Milo', 'Luna', 'Ava', 'Emma'];
+const VOICE_OPTIONS = KITTEN_VOICE_OPTIONS;
 const VIETNAMESE_TTS_VOICES = ['vi-VN-HoaiMyNeural', 'vi-VN-NamMinhNeural'];
 const SCRIPT_LANGUAGE_OPTIONS = [
   { value: 'english', label: 'English' },
   { value: 'vietnamese', label: 'Vietnamese' },
+  { value: 'chinese', label: 'Chinese' },
+  { value: 'japanese', label: 'Japanese' },
+  { value: 'korean', label: 'Korean' },
+  { value: 'thai', label: 'Thai' },
+  { value: 'indonesian', label: 'Indonesian' },
+  { value: 'french', label: 'French' },
+  { value: 'german', label: 'German' },
+  { value: 'spanish', label: 'Spanish' },
+  { value: 'portuguese', label: 'Portuguese' },
+  { value: 'hindi', label: 'Hindi' },
 ] as const;
+const LANGUAGE_TO_TTS_LANG: Record<string, string> = {
+  english: 'en',
+  vietnamese: 'vi',
+  chinese: 'zh',
+  japanese: 'ja',
+  korean: 'ko',
+  thai: 'th',
+  indonesian: 'id',
+  french: 'fr',
+  german: 'de',
+  spanish: 'es',
+  portuguese: 'pt',
+  hindi: 'hi',
+};
 const LANGUAGE_VOICE_MAP: Record<string, string[]> = {
   vietnamese: VIETNAMESE_TTS_VOICES,
-  english: ['Luna', 'Ava', 'Emma'],
+  english: KITTEN_VOICE_OPTIONS,
 };
+
+const getLocalTtsVoiceOptions = (engine: string, language = 'english'): string[] => {
+  const normalizedEngine = String(engine || '').trim().toLowerCase();
+  if (normalizedEngine === 'omnivoice') return OMNIVOICE_VOICE_OPTIONS;
+  if (normalizedEngine === 'kitten') return KITTEN_VOICE_OPTIONS;
+  return LANGUAGE_VOICE_MAP[language] || VOICE_OPTIONS;
+};
+
+const getDefaultTtsVoice = (engine: string, language = 'english'): string => {
+  const voices = getLocalTtsVoiceOptions(engine, language);
+  return voices[0] || 'Jasper';
+};
+const PRODUCTION_PRESET_KEY = 'mp_youtube_production_controls_v1';
+const TEMPLATE_OPTIONS = [
+  { value: 'tips', label: 'Tips' },
+  { value: 'story', label: 'Story' },
+  { value: 'facts', label: 'Facts' },
+  { value: 'tutorial', label: 'Tutorial' },
+  { value: 'pov', label: 'POV' },
+] as const;
+const STYLE_PRESET_OPTIONS = [
+  { value: 'clean', label: 'Clean' },
+  { value: 'cinematic', label: 'Cinematic' },
+  { value: 'caption_heavy', label: 'Caption Heavy' },
+  { value: 'fast_cut', label: 'Fast Cut' },
+  { value: 'minimal', label: 'Minimal' },
+] as const;
+const RENDERER_OPTIONS = [
+  { value: 'moviepy', label: 'MoviePy' },
+  { value: 'html', label: 'HTML Prototype' },
+] as const;
+const SCHEDULE_PLATFORM_OPTIONS = [
+  { value: 'youtube', label: 'YouTube' },
+  { value: 'twitter', label: 'Twitter/X' },
+  { value: 'affiliate', label: 'Affiliate' },
+] as const;
 const GEMINI_TTS_VOICES = [
   'Zephyr',
   'Puck',
@@ -107,6 +169,7 @@ interface SessionData extends SessionSummary {
   voice_used?: string;
   english_cc_bottom?: boolean;
   enable_cc?: boolean;
+  cc_mode?: 'script' | 'whisper' | 'auto';
   topic_prompt?: string;
   topic_output?: string;
   metadata_title_prompt?: string;
@@ -229,6 +292,7 @@ interface AppConfig {
   whisper_beam_size: number;
   tts_engine: string;
   tts_fallback_engine: string;
+  tts_language: string;
   tts_voice: string;
   tts_strict_mode: boolean;
   enable_title_audio: boolean;
@@ -664,26 +728,27 @@ export default function App() {
                 <Plus className="w-3.5 h-3.5" />
                 {creatingSession ? 'Adding...' : 'New Session'}
               </button>
-              {/* "All" option */}
-              <button
-                onClick={() => setActiveSessionId('')}
-                className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all mb-1
-                  ${activeSessionId === '' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
-              >
-                <span className="hidden lg:block">All Sessions</span>
-                <span className="lg:hidden text-[10px]">ALL</span>
-              </button>
-
-              {sessions.map((s) => (
-                <SessionItem
-                  key={s.session_id}
-                  session={s}
-                  isActive={activeSessionId === s.session_id}
-                  onClick={() => setActiveSessionId(s.session_id)}
-                  onRename={(name) => handleRenameSession(s.session_id, name)}
-                  onDelete={() => handleDeleteSession(s.session_id)}
-                />
-              ))}
+              <div className="max-h-[258px] overflow-y-auto pr-1 [scrollbar-width:thin] [scrollbar-color:#334155_transparent]">
+                {/* "All" option */}
+                <button
+                  onClick={() => setActiveSessionId('')}
+                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all mb-1
+                    ${activeSessionId === '' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
+                >
+                  <span className="hidden lg:block">All Sessions</span>
+                  <span className="lg:hidden text-[10px]">ALL</span>
+                </button>
+                {sessions.map((s) => (
+                  <SessionItem
+                    key={s.session_id}
+                    session={s}
+                    isActive={activeSessionId === s.session_id}
+                    onClick={() => setActiveSessionId(s.session_id)}
+                    onRename={(name) => handleRenameSession(s.session_id, name)}
+                    onDelete={() => handleDeleteSession(s.session_id)}
+                  />
+                ))}
+              </div>
           </div>
         </nav>
 
@@ -1205,18 +1270,21 @@ function ConfigWorkspace() {
   const [fetchingSttModels, setFetchingSttModels] = useState(false);
   const [fetchingVoices, setFetchingVoices] = useState(false);
   const [fetchingWebModels, setFetchingWebModels] = useState(false);
+  const [showNineRouterSettings, setShowNineRouterSettings] = useState(true);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [availableImageModels, setAvailableImageModels] = useState<string[]>([]);
   const [availableTtsModels, setAvailableTtsModels] = useState<string[]>([]);
   const [availableSttModels, setAvailableSttModels] = useState<string[]>([]);
   const [availableVoices, setAvailableVoices] = useState<string[]>([]);
   const [availableWebModels, setAvailableWebModels] = useState<string[]>([]);
+  const [availableFonts, setAvailableFonts] = useState<string[]>([]);
   const [modelsError, setModelsError] = useState('');
   const [imageModelsError, setImageModelsError] = useState('');
   const [ttsModelsError, setTtsModelsError] = useState('');
   const [sttModelsError, setSttModelsError] = useState('');
   const [voicesError, setVoicesError] = useState('');
   const [webModelsError, setWebModelsError] = useState('');
+  const [fontsError, setFontsError] = useState('');
   const [cfg, setCfg] = useState<AppConfig>({
     verbose: false,
     headless: false,
@@ -1230,6 +1298,7 @@ function ConfigWorkspace() {
     whisper_beam_size: 1,
     tts_engine: 'kitten',
     tts_fallback_engine: 'kitten',
+    tts_language: 'auto',
     tts_voice: 'Jasper',
     tts_strict_mode: false,
     enable_title_audio: true,
@@ -1279,8 +1348,22 @@ function ConfigWorkspace() {
     }
   };
 
+  const fetchAvailableFonts = async () => {
+    setFontsError('');
+    try {
+      const res = await fetch(`${API}/system/fonts`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || 'Failed to load fonts');
+      setAvailableFonts(Array.isArray(data.fonts) ? data.fonts : []);
+    } catch (err) {
+      setAvailableFonts([]);
+      setFontsError((err as Error)?.message || 'Could not load fonts folder.');
+    }
+  };
+
   useEffect(() => {
     void fetchConfig();
+    void fetchAvailableFonts();
   }, []);
 
   const fetchAvailableModels = async () => {
@@ -1371,6 +1454,7 @@ function ConfigWorkspace() {
     try {
       const ttsModel = String(nrCfg.tts_model || 'edge-tts/vi-VN-HoaiMyNeural');
       const currentVoice = String(nrCfg.tts_voice || '');
+      const configuredLanguage = String(cfg.tts_language || '').toLowerCase();
       if (ttsModel.toLowerCase().startsWith('gemini/')) {
         setAvailableVoices(GEMINI_TTS_VOICES);
         if (!GEMINI_TTS_VOICES.includes(currentVoice)) {
@@ -1379,12 +1463,18 @@ function ConfigWorkspace() {
         return;
       }
       const provider = ttsModel.includes('/') ? ttsModel.split('/')[0] : 'edge-tts';
-      const lang = currentVoice.toLowerCase().startsWith('vi') || ttsModel.toLowerCase().includes('/vi') ? 'vi' : '';
-      const query = new URLSearchParams({ provider, ...(lang ? { lang } : {}) });
+      const lang = LANGUAGE_TO_TTS_LANG[configuredLanguage] || '';
+      const query = new URLSearchParams({ provider });
       const res = await fetch(`${API}/system/ai/voices?${query.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.detail || 'Failed to fetch voices');
-      const voices = data.voices || [];
+      const voices = (data.voices || []).sort((a: string, b: string) => {
+        if (!lang) return a.localeCompare(b);
+        const aMatches = a.toLowerCase().startsWith(`${lang}-`) || a.toLowerCase().includes(`/${lang}-`);
+        const bMatches = b.toLowerCase().startsWith(`${lang}-`) || b.toLowerCase().includes(`/${lang}-`);
+        if (aMatches === bMatches) return a.localeCompare(b);
+        return aMatches ? -1 : 1;
+      });
       setAvailableVoices(voices);
       if (voices.length === 0) {
         setVoicesError('No voices found for this TTS provider. You can still enter a voice manually.');
@@ -1463,6 +1553,7 @@ function ConfigWorkspace() {
           whisper_beam_size: Math.max(1, Number(cfg.whisper_beam_size) || 1),
           tts_engine: String(cfg.tts_engine || 'kitten'),
           tts_fallback_engine: String(cfg.tts_fallback_engine || 'kitten'),
+          tts_language: String(cfg.tts_language || 'auto'),
           tts_voice: String(cfg.tts_voice || 'Jasper'),
           tts_strict_mode: !!cfg.tts_strict_mode,
           enable_title_audio: cfg.enable_title_audio !== undefined ? !!cfg.enable_title_audio : true,
@@ -1527,6 +1618,8 @@ function ConfigWorkspace() {
       },
     }));
   };
+  const currentFont = String(cfg.font || 'bold_font.ttf');
+  const fontOptions = availableFonts.includes(currentFont) ? availableFonts : [currentFont, ...availableFonts];
 
   if (loading) {
     return (
@@ -1712,9 +1805,19 @@ function ConfigWorkspace() {
                 {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                 {saving ? 'Saving...' : 'Save 9Router'}
               </button>
+              <button
+                type="button"
+                onClick={() => setShowNineRouterSettings((v) => !v)}
+                className="px-3 py-1.5 text-xs rounded-lg border border-cyan-500/20 text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20"
+                aria-expanded={showNineRouterSettings}
+              >
+                {showNineRouterSettings ? 'Hide' : 'Show'}
+              </button>
             </div>
           </div>
 
+          {showNineRouterSettings && (
+            <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
             <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
               <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">9Router Base URL</p>
@@ -1771,6 +1874,20 @@ function ConfigWorkspace() {
                   {fetchingTtsModels ? 'Loading...' : 'Fetch TTS'}
                 </button>
               </div>
+            </label>
+            <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">TTS Language</p>
+              <select
+                value={String(cfg.tts_language || 'auto')}
+                onChange={e => {
+                  setCfg(prev => ({ ...prev, tts_language: e.target.value }));
+                  setAvailableVoices([]);
+                }}
+                className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2"
+              >
+                <option value="auto">Auto / All voices</option>
+                {SCRIPT_LANGUAGE_OPTIONS.map(lang => <option key={lang.value} value={lang.value}>{lang.label}</option>)}
+              </select>
             </label>
             <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
               <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">TTS Voice</p>
@@ -1845,6 +1962,8 @@ function ConfigWorkspace() {
           {availableSttModels.length > 0 && <p className="text-xs text-emerald-300 mt-3">{availableSttModels.length} STT model(s) found on 9Router.</p>}
           {availableVoices.length > 0 && <p className="text-xs text-emerald-300 mt-3">{availableVoices.length} voice option(s) available.</p>}
           {availableWebModels.length > 0 && <p className="text-xs text-emerald-300 mt-3">{availableWebModels.length} web search model(s) found on 9Router.</p>}
+            </>
+          )}
         </PremiumCard>
       )}
 
@@ -1901,7 +2020,20 @@ function ConfigWorkspace() {
 
           <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1" title="Primary TTS engine. kitten = fast/lightweight; omnivoice = high quality but requires GPU.">TTS engine</p>
-            <select value={cfg.tts_engine || 'kitten'} onChange={e => setCfg(prev => ({ ...prev, tts_engine: e.target.value }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2">
+            <select
+              value={cfg.tts_engine || 'kitten'}
+              onChange={e => {
+                const nextEngine = e.target.value;
+                setCfg(prev => ({
+                  ...prev,
+                  tts_engine: nextEngine,
+                  tts_voice: nextEngine === 'ninerouter'
+                    ? String(nrCfg.tts_voice || prev.tts_voice || 'vi-VN-HoaiMyNeural')
+                    : getDefaultTtsVoice(nextEngine, prev.tts_language || 'english'),
+                }));
+              }}
+              className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2"
+            >
               <option value="kitten">kitten (fast, recommended)</option>
               <option value="omnivoice">omnivoice (high quality, needs GPU)</option>
               <option value="ninerouter">ninerouter (9Router cloud)</option>
@@ -1919,19 +2051,40 @@ function ConfigWorkspace() {
 
           <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1" title="Default voice used for text-to-speech.">TTS voice</p>
-            <select value={cfg.tts_voice} onChange={e => setCfg(prev => ({ ...prev, tts_voice: e.target.value }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" title="Applies to new generation runs.">
-              <option value="Jasper">Jasper</option>
-              <option value="Luna">Luna</option>
-              <option value="Milo">Milo</option>
-              <option value="Ava">Ava</option>
-              <option value="Emma">Emma</option>
-            </select>
+            {cfg.tts_engine === 'ninerouter' ? (
+              <div className="flex gap-2">
+                <select
+                  value={String(nrCfg.tts_voice || cfg.tts_voice || '')}
+                  onChange={e => {
+                    setCfg(prev => ({ ...prev, tts_voice: e.target.value }));
+                    updateNineRouter({ tts_voice: e.target.value });
+                  }}
+                  className="flex-1 bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2"
+                  title="Uses 9Router voice list when fetched."
+                >
+                  {(availableVoices.length > 0 ? availableVoices : [String(nrCfg.tts_voice || cfg.tts_voice || 'vi-VN-HoaiMyNeural')]).map(v => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+                <button onClick={() => void fetchAvailableVoices()} disabled={fetchingVoices} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-orange-500/30 text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 text-xs font-semibold disabled:opacity-60 shrink-0">
+                  {fetchingVoices ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                  {fetchingVoices ? 'Loading...' : 'Fetch'}
+                </button>
+              </div>
+            ) : (
+              <select value={cfg.tts_voice} onChange={e => setCfg(prev => ({ ...prev, tts_voice: e.target.value }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" title={`Applies to new generation runs with ${cfg.tts_engine || 'kitten'}.`}>
+                {getLocalTtsVoiceOptions(cfg.tts_engine, cfg.tts_language).map((voice) => (
+                  <option key={voice} value={voice}>{voice}</option>
+                ))}
+              </select>
+            )}
           </label>
 
           <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1" title="Speech-to-text engine for subtitle generation.">STT provider</p>
-            <select value={cfg.stt_provider} onChange={e => setCfg(prev => ({ ...prev, stt_provider: e.target.value }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" title="local_whisper is local and free; assemblyai is cloud-based.">
+            <select value={cfg.stt_provider} onChange={e => setCfg(prev => ({ ...prev, stt_provider: e.target.value }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" title="local_whisper is local/free; whisperx is optional local alignment; assemblyai is cloud-based.">
               <option value="local_whisper">local_whisper</option>
+              <option value="whisperx">whisperx</option>
               <option value="third_party_assemblyai">third_party_assemblyai</option>
               <option value="ninerouter">ninerouter</option>
             </select>
@@ -2008,7 +2161,14 @@ function ConfigWorkspace() {
 
           <label className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1" title="Font filename in fonts folder used by subtitle renderer.">Subtitle font file</p>
-            <input type="text" value={cfg.font} onChange={e => setCfg(prev => ({ ...prev, font: e.target.value }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" title="Example: bold_font.ttf" />
+            {fontOptions.length > 0 ? (
+              <select value={currentFont} onChange={e => setCfg(prev => ({ ...prev, font: e.target.value }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" title="Fonts are loaded from the project fonts folder.">
+                {fontOptions.map(font => <option key={font} value={font}>{font}</option>)}
+              </select>
+            ) : (
+              <input type="text" value={cfg.font} onChange={e => setCfg(prev => ({ ...prev, font: e.target.value }))} className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2" title="Example: bold_font.ttf" />
+            )}
+            {fontsError && <p className="text-xs text-amber-300 mt-2">{fontsError}</p>}
           </label>
         </div>
       </PremiumCard>
@@ -2515,6 +2675,9 @@ function YouTubeWorkspace({
   const [generatingAudioText, setGeneratingAudioText] = useState(false);
   const [translatingScript, setTranslatingScript] = useState(false);
   const [generatingCcPreview, setGeneratingCcPreview] = useState(false);
+  const [loadingTtsVoices, setLoadingTtsVoices] = useState(false);
+  const [ninerouterTtsModel, setNinerouterTtsModel] = useState('');
+  const [ninerouterVoiceOptions, setNinerouterVoiceOptions] = useState<string[]>([]);
   const [pushingNow, setPushingNow] = useState(false);
   const [loadingSessionData, setLoadingSessionData] = useState(false);
   const [activeSessionStage, setActiveSessionStage] = useState('');
@@ -2534,12 +2697,14 @@ function YouTubeWorkspace({
   const [scriptLanguage, setScriptLanguage] = useState('vietnamese');
   const [audioTextPreview, setAudioTextPreview] = useState('');
   const [ccPreview, setCcPreview] = useState('');
+  const [ccMode, setCcMode] = useState<'script' | 'whisper'>('script');
   const [promptTrace, setPromptTrace] = useState('');
   const [sessionVoiceUsed, setSessionVoiceUsed] = useState('');
   const [toastMsg, setToastMsg] = useState('');
   const [showAudioTextGroup, setShowAudioTextGroup] = useState(true);
   const [showGenerationProgress, setShowGenerationProgress] = useState(true);
   const [showPublishOptions, setShowPublishOptions] = useState(true);
+  const [showProductionControls, setShowProductionControls] = useState(true);
   const [stepRunMode, setStepRunMode] = useState<'auto' | 'custom'>('auto');
   const [customStartStep, setCustomStartStep] = useState('tts');
   const [applyingCustomImages, setApplyingCustomImages] = useState(false);
@@ -2557,9 +2722,22 @@ function YouTubeWorkspace({
   const [sessionSyncError, setSessionSyncError] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [savingSection, setSavingSection] = useState<'' | 'subject' | 'script' | 'metadata'>('');
+  const [contentTemplate, setContentTemplate] = useState('tips');
+  const [stylePreset, setStylePreset] = useState('clean');
+  const [renderer, setRenderer] = useState('moviepy');
+  const [glossary, setGlossary] = useState('');
+  const [scheduleAt, setScheduleAt] = useState('');
+  const [schedulePlatforms, setSchedulePlatforms] = useState<string[]>(['youtube']);
   const pendingIdeaForceNewSessionRef = useRef(false);
   const pendingTranslatePrefillRef = useRef(false);
   const workspaceTopRef = useRef<HTMLDivElement>(null);
+  const isNineRouterTts = String(ttsEngine || '').toLowerCase() === 'ninerouter';
+  const isKittenTts = String(ttsEngine || '').toLowerCase() === 'kitten';
+  const currentVoiceOptions = useMemo(() => {
+    if (isNineRouterTts && ninerouterVoiceOptions.length > 0) return ninerouterVoiceOptions;
+    if (isNineRouterTts && ttsVoice) return [ttsVoice];
+    return getLocalTtsVoiceOptions(ttsEngine, scriptLanguage);
+  }, [isNineRouterTts, ninerouterVoiceOptions, scriptLanguage, ttsEngine, ttsVoice]);
 
   // Apply prefill from Research workspace — fill Subject + Script, stay at Script step for review
   useEffect(() => {
@@ -2586,19 +2764,102 @@ function YouTubeWorkspace({
 
   // KittenTTS only supports English — auto-force English when engine is kitten
   useEffect(() => {
-    if (ttsEngine === 'kitten') {
+    if (isKittenTts) {
       setScriptLanguage('english');
       setTtsVoice(prev => {
-        const englishVoices = LANGUAGE_VOICE_MAP['english'] || VOICE_OPTIONS;
+        const englishVoices = getLocalTtsVoiceOptions('kitten', 'english');
         return englishVoices.includes(prev) ? prev : englishVoices[0];
       });
     }
-  }, [ttsEngine]);
+  }, [isKittenTts]);
 
   useEffect(() => {
-    const languageVoices = LANGUAGE_VOICE_MAP[scriptLanguage] || VOICE_OPTIONS;
-    setTtsVoice(prev => languageVoices.includes(prev) ? prev : languageVoices[0]);
-  }, [scriptLanguage]);
+    if (isNineRouterTts) return;
+    const engineVoices = getLocalTtsVoiceOptions(ttsEngine, scriptLanguage);
+    setTtsVoice(prev => engineVoices.includes(prev) ? prev : engineVoices[0]);
+  }, [isNineRouterTts, scriptLanguage, ttsEngine]);
+
+  useEffect(() => {
+    if (!isNineRouterTts) return;
+    let cancelled = false;
+    const fetchNineRouterVoices = async () => {
+      setLoadingTtsVoices(true);
+      try {
+        const cfgRes = await fetch(`${API}/system/config`);
+        const cfgData = await cfgRes.json();
+        if (!cfgRes.ok) throw new Error(cfgData?.detail || 'Failed to load config');
+        const ttsModel = String(cfgData?.providers?.ninerouter?.tts_model || 'edge-tts/vi-VN-HoaiMyNeural');
+        const provider = ttsModel.includes('/') ? ttsModel.split('/')[0] : 'edge-tts';
+        const lang = LANGUAGE_TO_TTS_LANG[scriptLanguage] || '';
+        const query = new URLSearchParams({ provider, ...(lang ? { lang } : {}) });
+        const voicesRes = await fetch(`${API}/system/ai/voices?${query.toString()}`);
+        const voicesData = await voicesRes.json();
+        if (!voicesRes.ok) throw new Error(voicesData?.detail || 'Failed to fetch voices');
+        const voices = Array.isArray(voicesData?.voices) ? voicesData.voices.map(String) : [];
+        if (cancelled) return;
+        setNinerouterTtsModel(ttsModel);
+        setNinerouterVoiceOptions(voices);
+        if (voices.length > 0) {
+          setTtsVoice(prev => voices.includes(prev) ? prev : voices[0]);
+        }
+      } catch {
+        if (!cancelled) setNinerouterVoiceOptions([]);
+      } finally {
+        if (!cancelled) setLoadingTtsVoices(false);
+      }
+    };
+    void fetchNineRouterVoices();
+    return () => { cancelled = true; };
+  }, [isNineRouterTts, scriptLanguage]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PRODUCTION_PRESET_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<{
+        contentTemplate: string;
+        stylePreset: string;
+        renderer: string;
+        glossary: string;
+        scheduleAt: string;
+        schedulePlatforms: string[];
+      }>;
+      if (parsed.contentTemplate && TEMPLATE_OPTIONS.some((option) => option.value === parsed.contentTemplate)) {
+        setContentTemplate(parsed.contentTemplate);
+      }
+      if (parsed.stylePreset && STYLE_PRESET_OPTIONS.some((option) => option.value === parsed.stylePreset)) {
+        setStylePreset(parsed.stylePreset);
+      }
+      if (parsed.renderer && RENDERER_OPTIONS.some((option) => option.value === parsed.renderer)) {
+        setRenderer(parsed.renderer);
+      }
+      if (typeof parsed.glossary === 'string') {
+        setGlossary(parsed.glossary);
+      }
+      if (typeof parsed.scheduleAt === 'string') {
+        setScheduleAt(parsed.scheduleAt);
+      }
+      if (Array.isArray(parsed.schedulePlatforms) && parsed.schedulePlatforms.length > 0) {
+        const allowedPlatforms = parsed.schedulePlatforms.filter((platform) =>
+          SCHEDULE_PLATFORM_OPTIONS.some((option) => option.value === platform)
+        );
+        if (allowedPlatforms.length > 0) setSchedulePlatforms(allowedPlatforms);
+      }
+    } catch {
+      return;
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(PRODUCTION_PRESET_KEY, JSON.stringify({
+      contentTemplate,
+      stylePreset,
+      renderer,
+      glossary,
+      scheduleAt,
+      schedulePlatforms,
+    }));
+  }, [contentTemplate, stylePreset, renderer, glossary, scheduleAt, schedulePlatforms]);
 
   const effectiveSessionId = activeSessionId || sessionId;
   const currentSessionKey = effectiveSessionId || DRAFT_SESSION_KEY;
@@ -2614,7 +2875,7 @@ function YouTubeWorkspace({
     fetch(`${API}/youtube/${preferredAccountId}/translate-script`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script: customScript, target_language: 'english', resume_session_id: effectiveSessionId }),
+      body: JSON.stringify({ script: customScript, target_language: 'english', resume_session_id: effectiveSessionId, glossary }),
     })
       .then(async (r) => {
         const data = await r.json();
@@ -2678,6 +2939,12 @@ function YouTubeWorkspace({
     return mappedActiveSessionStep;
   })();
 
+  useEffect(() => {
+    if (scriptLanguage === 'vietnamese' && !englishCcBottom) {
+      setCcMode('script');
+    }
+  }, [scriptLanguage, englishCcBottom]);
+
   const generationWarnings = useMemo(() => {
     const warnings: string[] = [];
 
@@ -2695,13 +2962,22 @@ function YouTubeWorkspace({
       warnings.push('Audio Text quá ngắn (< 30 ký tự), dễ gây subtitle/audio lỗi.');
     }
 
-    const allowedVoices = LANGUAGE_VOICE_MAP[scriptLanguage] || VOICE_OPTIONS;
-    if (!allowedVoices.includes(ttsVoice)) {
+    const shouldValidateVoice = !isNineRouterTts || ninerouterVoiceOptions.length > 0;
+    if (shouldValidateVoice && !currentVoiceOptions.includes(ttsVoice)) {
       warnings.push('Voice không hợp lệ. Hãy chọn lại voice trong danh sách.');
     }
 
     if (!SCRIPT_LANGUAGE_OPTIONS.some((lang) => lang.value === scriptLanguage)) {
       warnings.push('Audio Language không hợp lệ.');
+    }
+
+    if (scheduleAt) {
+      const scheduledDate = new Date(scheduleAt);
+      if (Number.isNaN(scheduledDate.getTime())) {
+        warnings.push('Schedule time is invalid.');
+      } else if (scheduledDate.getTime() <= Date.now()) {
+        warnings.push('Schedule time must be in the future.');
+      }
     }
 
     if (loadingSessionData) {
@@ -2714,6 +2990,10 @@ function YouTubeWorkspace({
     normalizedAudioText,
     ttsVoice,
     scriptLanguage,
+    isNineRouterTts,
+    ninerouterVoiceOptions,
+    currentVoiceOptions,
+    scheduleAt,
     loadingSessionData,
     preferredAccountId,
   ]);
@@ -2931,6 +3211,9 @@ function YouTubeWorkspace({
           if (enableCcDirtySessionKey !== currentSessionKey && typeof data?.enable_cc === 'boolean') {
             setEnableCc(data.enable_cc);
           }
+          if (data?.cc_mode === 'script' || data?.cc_mode === 'whisper') {
+            setCcMode(data.cc_mode);
+          }
         })
         .catch((err) => {
           setSessionSyncError(getErrorMessage(err, 'Unable to sync selected session.'));
@@ -3027,6 +3310,22 @@ function YouTubeWorkspace({
     return 'pending';
   };
 
+  const toggleSchedulePlatform = (platform: string) => {
+    setSchedulePlatforms((prev) => {
+      if (prev.includes(platform)) return prev.filter((item) => item !== platform);
+      return [...prev, platform];
+    });
+  };
+
+  const buildProductionPayload = () => ({
+    renderer,
+    template: contentTemplate,
+    style_preset: stylePreset,
+    glossary,
+    schedule_at: scheduleAt,
+    schedule_platforms: scheduleAt ? (schedulePlatforms.length > 0 ? schedulePlatforms : ['youtube']) : [],
+  });
+
   const handleRegenerateFromStep = (stepId: string) => {
     if (regenerateWarnings.length > 0) {
       showToast(`❌ ${regenerateWarnings[0]}`);
@@ -3063,6 +3362,8 @@ function YouTubeWorkspace({
         script_language: scriptLanguage,
         english_cc_bottom: englishCcBottom,
         enable_cc: enableCc,
+        cc_mode: ccMode,
+        ...buildProductionPayload(),
       }),
     })
       .then(async (r) => {
@@ -3110,6 +3411,8 @@ function YouTubeWorkspace({
         script_language: scriptLanguage,
         english_cc_bottom: englishCcBottom,
         enable_cc: enableCc,
+        cc_mode: ccMode,
+        ...buildProductionPayload(),
       }),
     })
       .then(async (r) => {
@@ -3188,7 +3491,7 @@ function YouTubeWorkspace({
     fetch(`${API}/youtube/${accountId}/translate-script`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script: scriptText, target_language: scriptLanguage, resume_session_id: effectiveSessionId }),
+      body: JSON.stringify({ script: scriptText, target_language: scriptLanguage, resume_session_id: effectiveSessionId, glossary }),
     })
       .then(async (r) => {
         const data = await r.json();
@@ -3255,6 +3558,7 @@ function YouTubeWorkspace({
         tts_voice: ttsVoice,
         english_cc_bottom: englishCcBottom,
         enable_cc: enableCc,
+        cc_mode: ccMode,
       }),
     })
       .then(async (r) => {
@@ -3648,8 +3952,8 @@ function YouTubeWorkspace({
               )}
             </div>
           </div>
-          <div className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Publish Mode</p>
+          <div className="rounded-xl border border-white/10 bg-slate-900/50 p-3 space-y-3">
+            <p className="text-[11px] uppercase tracking-wide text-slate-500">Publishing Settings</p>
             <select
               value={publishMode}
               onChange={(e) => setPublishMode(e.target.value as 'auto' | 'manual_review')}
@@ -3658,6 +3962,34 @@ function YouTubeWorkspace({
               <option value="auto">Auto publish when generation done</option>
               <option value="manual_review">Generate only, review before pushing</option>
             </select>
+
+            <div>
+              <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Schedule At</label>
+              <input
+                type="datetime-local"
+                value={scheduleAt}
+                onChange={(e) => setScheduleAt(e.target.value)}
+                className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500/50"
+              />
+              <p className="mt-1 text-[11px] text-slate-500">Queue only. Auto publish worker is not enabled yet.</p>
+            </div>
+
+            <div>
+              <p className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Schedule Platforms</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3 gap-2">
+                {SCHEDULE_PLATFORM_OPTIONS.map((platform) => (
+                  <label key={platform.value} className="rounded-lg border border-slate-700/40 bg-slate-950/50 px-3 py-2 flex items-center justify-between gap-2 cursor-pointer">
+                    <span className="text-sm text-slate-200">{platform.label}</span>
+                    <input
+                      type="checkbox"
+                      checked={schedulePlatforms.includes(platform.value)}
+                      onChange={() => toggleSchedulePlatform(platform.value)}
+                      className="h-4 w-4 accent-cyan-500"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -3730,7 +4062,11 @@ function YouTubeWorkspace({
                       onChange={(e) => {
                         const nextLang = e.target.value;
                         setScriptLanguage(nextLang);
-                        setTtsVoice((LANGUAGE_VOICE_MAP[nextLang] || VOICE_OPTIONS)[0]);
+                        if (isNineRouterTts) {
+                          setNinerouterVoiceOptions([]);
+                        } else {
+                          setTtsVoice(getDefaultTtsVoice(ttsEngine, nextLang));
+                        }
                       }}
                       className="bg-slate-900/80 border border-purple-500/30 text-purple-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-purple-400/60 shrink-0"
                       title="Audio language"
@@ -3745,9 +4081,10 @@ function YouTubeWorkspace({
                       value={ttsVoice}
                       onChange={(e) => setTtsVoice(e.target.value)}
                       className="bg-slate-900/80 border border-purple-500/30 text-purple-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-purple-400/60 shrink-0"
-                      title="TTS voice"
+                      title={isNineRouterTts && ninerouterTtsModel ? `9Router voice from ${ninerouterTtsModel}` : 'TTS voice'}
                     >
-                      {(LANGUAGE_VOICE_MAP[scriptLanguage] || VOICE_OPTIONS).map((v) => (
+                      {loadingTtsVoices && <option value={ttsVoice}>Loading voices...</option>}
+                      {!loadingTtsVoices && currentVoiceOptions.map((v) => (
                         <option key={v} value={v}>{v}</option>
                       ))}
                     </select>
@@ -3801,32 +4138,42 @@ function YouTubeWorkspace({
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-amber-300">Step 3 · Subtitle Preview</p>
+                      <p className="text-xs uppercase tracking-wide text-amber-300">Step 3 - Subtitle Preview</p>
                       <label className="block text-sm font-medium text-slate-300">
                         {ccPreview
-                          ? <span>Whisper CC <span className="text-xs text-emerald-400 font-normal">(từ audio thật)</span></span>
-                          : <span>Draft CC <span className="text-xs text-slate-500 font-normal">(từ script text — xem nội dung trước khi gen audio)</span></span>
+                          ? <span>{ccMode === 'script' ? 'Script CC' : 'Whisper CC'} <span className="text-xs text-emerald-400 font-normal">({ccMode === 'script' ? 'tu text chuan' : 'tu audio that'})</span></span>
+                          : <span>Draft CC <span className="text-xs text-slate-500 font-normal">(tu script text)</span></span>
                         }
                       </label>
                     </div>
-                    <button
-                      onClick={handleRegenerateCcPreview}
-                      disabled={generatingCcPreview || !normalizedAudioText}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors text-[10px] font-semibold uppercase tracking-wide disabled:opacity-60"
-                    >
-                      {generatingCcPreview ? <Loader2 className="w-3 h-3 animate-spin" /> : <Pencil className="w-3 h-3" />}
-                      {generatingCcPreview ? 'Generating...' : 'Gen Whisper CC'}
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <select
+                        value={ccMode}
+                        onChange={(e) => setCcMode(e.target.value as 'script' | 'whisper')}
+                        className="bg-slate-950/80 border border-amber-500/30 rounded-md px-2 py-1 text-[10px] text-amber-100 focus:outline-none"
+                      >
+                        <option value="script">Script CC</option>
+                        <option value="whisper">Whisper CC</option>
+                      </select>
+                      <button
+                        onClick={handleRegenerateCcPreview}
+                        disabled={generatingCcPreview || !normalizedAudioText}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors text-[10px] font-semibold uppercase tracking-wide disabled:opacity-60"
+                      >
+                        {generatingCcPreview ? <Loader2 className="w-3 h-3 animate-spin" /> : <Pencil className="w-3 h-3" />}
+                        {generatingCcPreview ? 'Generating...' : ccMode === 'script' ? 'Gen Script CC' : 'Gen Whisper CC'}
+                      </button>
+                    </div>
                   </div>
                   <textarea
-                    value={ccPreview || draftCcFromText || 'Chưa có script. Hãy điền hoặc Auto Build ở Step 2 trước.'}
+                    value={ccPreview || draftCcFromText || 'Chua co script. Hay dien hoac Auto Build o Step 2 truoc.'}
                     readOnly
                     rows={5}
                     className={`w-full bg-slate-950/70 border rounded-xl px-4 py-3 text-slate-200 resize-none ${ccPreview ? 'border-emerald-500/30' : 'border-slate-700/50'}`}
                   />
                   {!ccPreview && draftCcFromText && (
                     <p className="text-[11px] text-slate-500">
-                      Đây là draft từ script text. Bấm <span className="text-amber-400 font-semibold">Gen Whisper CC</span> để gen sub chính xác từ audio TTS thật.
+                      Draft from script text. Use <span className="text-amber-400 font-semibold">Script CC</span> for Vietnamese to keep exact text; use Whisper CC when captions must come from real audio.
                     </p>
                   )}
                 </div>
@@ -3904,26 +4251,102 @@ function YouTubeWorkspace({
         </div>
 
         <div className="mt-4 space-y-3 border border-white/10 bg-slate-900/50 rounded-xl p-4">
+          <button
+            type="button"
+            onClick={() => setShowProductionControls((v) => !v)}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <p className="text-sm text-slate-200 font-semibold">Video Settings</p>
+            <span className="text-xs text-cyan-300">{showProductionControls ? 'Hide' : 'Show'}</span>
+          </button>
+
+          {showProductionControls && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Template</label>
+                  <select
+                    value={contentTemplate}
+                    onChange={(e) => setContentTemplate(e.target.value)}
+                    className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500/50"
+                  >
+                    {TEMPLATE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Style Preset</label>
+                  <select
+                    value={stylePreset}
+                    onChange={(e) => setStylePreset(e.target.value)}
+                    className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500/50"
+                  >
+                    {STYLE_PRESET_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Renderer</label>
+                  <select
+                    value={renderer}
+                    onChange={(e) => setRenderer(e.target.value)}
+                    className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500/50"
+                  >
+                    {RENDERER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {renderer === 'html' && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  HTML renderer is a composition prototype. It writes HTML metadata, but real MP4 rendering still uses MoviePy.
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Glossary</label>
+                <textarea
+                  value={glossary}
+                  onChange={(e) => setGlossary(e.target.value)}
+                  placeholder="AI Agent = tac nhan AI&#10;workflow: quy trinh"
+                  rows={4}
+                  className="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 resize-y"
+                />
+                <p className="mt-1 text-[11px] text-slate-500">Used by translation and subtitle adaptation to keep terms stable.</p>
+              </div>
+
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 space-y-3 border border-white/10 bg-slate-900/50 rounded-xl p-4">
           <div className="flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => setShowPublishOptions((v) => !v)}
-              className="flex items-center gap-2 text-left flex-1"
-            >
-              <p className="text-sm text-slate-200 font-semibold">Publish & Metadata Options</p>
-              <span className="text-xs text-cyan-300">{showPublishOptions ? '▾ Hide' : '▸ Show'}</span>
-            </button>
-            {effectiveSessionId && (
+            <p className="text-sm text-slate-200 font-semibold">Publish & Metadata Options</p>
+            <div className="flex items-center gap-2 shrink-0">
+              {effectiveSessionId && (
+                <button
+                  onClick={() => void handleSaveMeta('metadata')}
+                  disabled={!!savingSection || (!titleOverride && !descriptionOverride && !tagsOverride)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50 text-[10px] font-semibold uppercase tracking-wide transition-colors shrink-0"
+                  title="Save title/description/tags to session"
+                >
+                  {savingSection === 'metadata' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                  {savingSection === 'metadata' ? 'Saving...' : 'Save Metadata'}
+                </button>
+              )}
               <button
-                onClick={() => void handleSaveMeta('metadata')}
-                disabled={!!savingSection || (!titleOverride && !descriptionOverride && !tagsOverride)}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50 text-[10px] font-semibold uppercase tracking-wide transition-colors shrink-0"
-                title="Save title/description/tags to session"
+                type="button"
+                onClick={() => setShowPublishOptions((v) => !v)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-cyan-500/20 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 text-[10px] font-semibold uppercase tracking-wide transition-colors"
+                aria-expanded={showPublishOptions}
               >
-                {savingSection === 'metadata' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                {savingSection === 'metadata' ? 'Saving...' : 'Save Metadata'}
+                {showPublishOptions ? 'Hide' : 'Show'}
               </button>
-            )}
+            </div>
           </div>
 
           {showPublishOptions && (

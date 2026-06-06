@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import sys
 import os
 import traceback
@@ -10,11 +10,15 @@ from cache import get_accounts
 from classes.YouTube import YouTube
 from classes.Tts import TTS
 from post_bridge_integration import maybe_crosspost_youtube_short
-from api.session_manager import create_session, find_session_by_subject, get_session
+from api.session_manager import create_session, find_session_by_fingerprint, find_session_by_subject, get_session
 from api.log_stream import add_log
 from api.cancel_registry import request_cancel, is_cancelled, clear_cancel, GenerationCancelledError
 from llm_provider import ensure_model_selected
 from config import ROOT_DIR
+from content_fingerprint import content_fingerprint
+from content_engine import build_content_plan, select_media_assets
+from scheduler import build_publish_queue, save_publish_queue
+from subtitles.adaptation import adapt_script_for_subtitles
 
 router = APIRouter(prefix="/youtube", tags=["youtube"])
 
@@ -34,6 +38,13 @@ class GenerateRequest(BaseModel):
     script_language: str = ""
     english_cc_bottom: bool = False
     enable_cc: bool = True   # When False, subtitles are not generated or burned into the video
+    cc_mode: str = "auto"  # auto | script | whisper
+    renderer: str = "moviepy"
+    template: str = "tips"
+    style_preset: str = "clean"
+    glossary: str = ""
+    schedule_at: str = ""
+    schedule_platforms: list[str] = Field(default_factory=list)
 
 
 class AudioTextRequest(BaseModel):
@@ -50,12 +61,14 @@ class SubtitlePreviewRequest(BaseModel):
     tts_voice: str = ""
     english_cc_bottom: bool = False
     enable_cc: bool = True
+    cc_mode: str = "auto"  # auto | script | whisper
 
 
 class TranslateScriptRequest(BaseModel):
     script: str
     target_language: str = "english"
     resume_session_id: str = ""
+    glossary: str = ""
 
 
 class PushNowRequest(BaseModel):
@@ -63,6 +76,10 @@ class PushNowRequest(BaseModel):
     title_override: str = ""
     description_override: str = ""
     tags_override: str = ""
+
+class SchedulePublishRequest(BaseModel):
+    run_at: str
+    platforms: list[str] = Field(default_factory=lambda: ["youtube"])
 
 
 class RegenerateMetadataRequest(BaseModel):
@@ -113,6 +130,13 @@ def _resolve_tts_voice(requested: str, language: str) -> str:
         return voice if voice in VIETNAMESE_TTS_VOICES else "vi-VN-HoaiMyNeural"
     return voice
 
+def _crosspost_status(result: bool | None) -> str:
+    if result is True:
+        return "posted"
+    if result is False:
+        return "failed"
+    return "skipped"
+
 
 def generate_and_upload_video(
     account_id: str,
@@ -130,6 +154,13 @@ def generate_and_upload_video(
     english_cc_bottom: bool = False,
     regenerate_from_step: str = "",
     enable_cc: bool = True,
+    cc_mode: str = "auto",
+    renderer: str = "moviepy",
+    template: str = "tips",
+    style_preset: str = "clean",
+    glossary: str = "",
+    schedule_at: str = "",
+    schedule_platforms: list[str] | None = None,
 ):
     from api.session_manager import SessionManager
 
@@ -167,6 +198,7 @@ def generate_and_upload_video(
         youtube.title_narration_text = title_override.strip()
         youtube.english_cc_bottom = bool(english_cc_bottom)
         youtube.enable_cc = bool(enable_cc)
+        youtube.cc_mode = str(cc_mode or "auto").strip().lower()
         tts_language = resolved_language
         resolved_voice = _resolve_tts_voice(tts_voice, resolved_language)
         tts = TTS(
@@ -188,10 +220,51 @@ def generate_and_upload_video(
 
         if custom_subject.strip():
             youtube.subject = custom_subject.strip()
-            session.save_stage("subject_set", subject=custom_subject.strip())
+            session.save_stage(
+                "subject_set",
+                subject=custom_subject.strip(),
+                content_fingerprint=content_fingerprint(custom_subject.strip(), custom_script.strip()),
+            )
         if custom_script.strip():
-            youtube.script = custom_script.strip()
-            session.save_stage("script_set", script=custom_script.strip())
+            adapted_script = adapt_script_for_subtitles(
+                custom_script.strip(),
+                target_language=resolved_language,
+                glossary_text=glossary,
+            )
+            youtube.script = adapted_script.script
+            session.save_stage(
+                "script_set",
+                script=adapted_script.script,
+                original_script=custom_script.strip(),
+                content_fingerprint=content_fingerprint(custom_subject.strip(), adapted_script.script),
+                subtitle_adaptation={
+                    "target_language": adapted_script.target_language,
+                    "steps": adapted_script.steps,
+                    "glossary_terms": [term.__dict__ for term in adapted_script.glossary_terms],
+                },
+            )
+
+        content_plan = build_content_plan(youtube.subject or custom_subject, template=template, style_preset=style_preset)
+        media_selection = select_media_assets(content_plan)
+        session.save_stage(
+            str(session.meta.get("stage") or "init"),
+            renderer=renderer or "moviepy",
+            content_plan=content_plan.__dict__,
+            media_selection=media_selection.__dict__,
+        )
+
+        if schedule_at.strip():
+            queue = build_publish_queue(
+                session.session_id,
+                schedule_platforms or ["youtube"],
+                schedule_at.strip(),
+            )
+            queue_path = save_publish_queue(queue)
+            session.save_stage(
+                str(session.meta.get("stage") or "init"),
+                publish_queue_path=queue_path,
+                scheduled_publish=[job.__dict__ for job in queue],
+            )
 
         # Load previous session state if re-generating from a specific step
         if regenerate_from_step.strip():
@@ -232,6 +305,8 @@ def generate_and_upload_video(
                 pending_publish={
                     "auto_push_social": bool(auto_push_social),
                     "is_for_kids": is_for_kids,
+                    "schedule_at": schedule_at.strip(),
+                    "schedule_platforms": schedule_platforms or [],
                 },
             )
             add_log("info", "🛑 Publish mode = manual_review. Video prepared; skipping auto upload.")
@@ -239,15 +314,20 @@ def generate_and_upload_video(
 
         upload_success = youtube.upload_video(is_for_kids_override=is_for_kids)
         if upload_success:
+            crosspost_result = None
             if auto_push_social:
-                maybe_crosspost_youtube_short(
+                crosspost_result = maybe_crosspost_youtube_short(
                     video_path=youtube.video_path,
                     title=youtube.metadata.get("title", ""),
                     interactive=False,
                 )
             else:
-                add_log("info", "ℹ️ Social auto-push disabled by config.")
-            session.save_stage("published", metadata=youtube.metadata)
+                add_log("info", "Social auto-push disabled by config.")
+            session.save_stage(
+                "published",
+                metadata=youtube.metadata,
+                crosspost_status=_crosspost_status(crosspost_result),
+            )
         else:
             session.save_stage("publish_failed", metadata=youtube.metadata)
     except Exception as exc:
@@ -277,7 +357,13 @@ def create_draft_session(account_id: str, req: DraftSessionRequest):
 
     name_hint = _build_session_name_hint(req.subject, req.script)
     session = create_session(name_hint)
-    session.save_stage("init", name=name_hint or session.meta.get("name", ""), subject=req.subject.strip(), script=req.script.strip())
+    session.save_stage(
+        "init",
+        name=name_hint or session.meta.get("name", ""),
+        subject=req.subject.strip(),
+        script=req.script.strip(),
+        content_fingerprint=content_fingerprint(req.subject, req.script),
+    )
     add_log("info", f"📝 Draft session created: {session.session_id}")
     return {"session_id": session.session_id, "status": "draft"}
 
@@ -299,9 +385,20 @@ def trigger_generation(account_id: str, req: GenerateRequest, background_tasks: 
         session = find_session_by_subject(req.subject.strip())
         if session:
             add_log("info", f"♻️  Found cached session {session.session_id} for subject: {req.subject}")
+        else:
+            fingerprint = content_fingerprint(req.subject, req.script)
+            session = find_session_by_fingerprint(fingerprint)
+            if session:
+                add_log("warning", f"Found cached session {session.session_id} for content fingerprint: {fingerprint}")
 
     if not session:
         session = create_session(_build_session_name_hint(req.subject, req.script))
+        session.save_stage(
+            "init",
+            subject=req.subject.strip(),
+            script=req.script.strip(),
+            content_fingerprint=content_fingerprint(req.subject, req.script),
+        )
         add_log("info", f"🆕 Created new session: {session.session_id}")
 
     background_tasks.add_task(
@@ -321,6 +418,13 @@ def trigger_generation(account_id: str, req: GenerateRequest, background_tasks: 
         req.english_cc_bottom,
         req.regenerate_from_step,
         req.enable_cc,
+        req.cc_mode,
+        req.renderer,
+        req.template,
+        req.style_preset,
+        req.glossary,
+        req.schedule_at,
+        req.schedule_platforms,
     )
     return {
         "status": "success",
@@ -406,8 +510,13 @@ def translate_script(account_id: str, req: TranslateScriptRequest):
     target_language = (req.target_language or "english").strip().title()
 
     from llm_provider import generate_text
+    glossary_context = ""
+    if req.glossary.strip():
+        from subtitles.glossary import format_glossary_context, parse_glossary
+        glossary_context = "\n" + format_glossary_context(parse_glossary(req.glossary))
+
     prompt = f"""Translate the following video script to {target_language}.
-Keep the same meaning, style and sentence count. Return ONLY the translated text, no explanation, no labels.
+Keep the same meaning, style and sentence count. Return ONLY the translated text, no explanation, no labels.{glossary_context}
 
 Script:
 {script}
@@ -419,9 +528,33 @@ Output language: {target_language}"""
     if not translated:
         raise HTTPException(status_code=500, detail="Translation failed: empty response from LLM")
 
-    translated = translated.strip()
+    adapted = adapt_script_for_subtitles(
+        translated.strip(),
+        target_language=target_language,
+        glossary_text=req.glossary,
+    )
+    translated = adapted.script
+    if req.resume_session_id.strip():
+        from api.session_manager import SessionManager
+        session = SessionManager(req.resume_session_id.strip())
+        session.save_stage(
+            str(session.meta.get("stage") or "script_set"),
+            translated_script=translated,
+            subtitle_adaptation={
+                "target_language": adapted.target_language,
+                "steps": adapted.steps,
+                "glossary_terms": [term.__dict__ for term in adapted.glossary_terms],
+            },
+        )
     add_log("info", f"✅ Translation done: {len(translated)} chars")
-    return {"translated": translated, "target_language": target_language}
+    return {
+        "translated": translated,
+        "target_language": target_language,
+        "adaptation": {
+            "steps": adapted.steps,
+            "glossary_terms": [term.__dict__ for term in adapted.glossary_terms],
+        },
+    }
 
 
 @router.post("/{account_id}/generate-cc-preview")
@@ -466,6 +599,7 @@ def generate_cc_preview(account_id: str, req: SubtitlePreviewRequest):
         youtube.script = script
         youtube.english_cc_bottom = bool(req.english_cc_bottom)
         youtube.enable_cc = bool(req.enable_cc)
+        youtube.cc_mode = str(req.cc_mode or "auto").strip().lower()
         resolved_voice = _resolve_tts_voice(req.tts_voice, language)
 
         tts = TTS(
@@ -497,6 +631,7 @@ def generate_cc_preview(account_id: str, req: SubtitlePreviewRequest):
             subtitle_preview=preview_data["subtitle_preview"],
             voice_used=preview_data["voice_used"],
             english_cc_bottom=bool(req.english_cc_bottom),
+            cc_mode=youtube.cc_mode,
         )
 
         add_log("success", f"✅ CC preview regenerated for session {session.session_id}")
@@ -512,6 +647,7 @@ def generate_cc_preview(account_id: str, req: SubtitlePreviewRequest):
             "subtitle_preview": preview_data["subtitle_preview"],
             "voice_used": preview_data["voice_used"],
             "english_cc_bottom": bool(req.english_cc_bottom),
+            "cc_mode": youtube.cc_mode,
         }
     except HTTPException:
         raise
@@ -646,14 +782,19 @@ def push_now(session_id: str, req: PushNowRequest):
                 detail="Upload failed. Check Firefox profile login/path and backend logs.",
             )
 
+        crosspost_result = None
         if auto_push_social:
-            maybe_crosspost_youtube_short(
+            crosspost_result = maybe_crosspost_youtube_short(
                 video_path=youtube.video_path,
                 title=youtube.metadata.get("title", ""),
                 interactive=False,
             )
 
-        session.save_stage("published", metadata=youtube.metadata)
+        session.save_stage(
+            "published",
+            metadata=youtube.metadata,
+            crosspost_status=_crosspost_status(crosspost_result),
+        )
         return {
             "ok": True,
             "session_id": session_id,
@@ -666,6 +807,32 @@ def push_now(session_id: str, req: PushNowRequest):
         add_log("error", f"❌ Push Now unexpected error: {exc}")
         add_log("error", traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Push Now unexpected error: {exc}")
+
+@router.post("/sessions/{session_id}/schedule")
+def schedule_publish(session_id: str, req: SchedulePublishRequest):
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not req.run_at.strip():
+        raise HTTPException(status_code=400, detail="run_at is required")
+
+    jobs = build_publish_queue(session_id, req.platforms, req.run_at.strip())
+    if not jobs:
+        raise HTTPException(status_code=400, detail="No valid publish platforms")
+
+    queue_path = save_publish_queue(jobs)
+    session.save_stage(
+        "scheduled",
+        publish_queue_path=queue_path,
+        scheduled_publish=[job.__dict__ for job in jobs],
+    )
+    add_log("info", f"Scheduled publish for session {session_id}: {', '.join(job.platform for job in jobs)}")
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "queue_path": queue_path,
+        "jobs": [job.__dict__ for job in jobs],
+    }
 
 
 class PatchMetaRequest(BaseModel):

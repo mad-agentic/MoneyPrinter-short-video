@@ -24,13 +24,20 @@ class NineRouterProvider:
     def _url(self, path: str) -> str:
         return f"{self.base_url}/v1/{path.lstrip('/')}"
 
-    def _headers(self, content_type: str | None = "application/json") -> dict[str, str]:
+    def _headers(self, content_type: str | None = "application/json", include_auth: bool = True) -> dict[str, str]:
         headers: dict[str, str] = {}
         if content_type:
             headers["Content-Type"] = content_type
-        if self.api_key and self.api_key.lower() != "none":
+        if include_auth and self.api_key and self.api_key.lower() != "none":
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
+
+    def _is_noauth_tts_provider(self, provider: str) -> bool:
+        return provider.strip().lower() in {"edge-tts", "google-tts", "local-device"}
+
+    def _is_noauth_tts_model(self, model: str) -> bool:
+        provider = model.split("/", 1)[0].strip().lower()
+        return provider in {"edge-tts", "google-tts", "local-device"}
 
     def _raise_for_response(self, response: requests.Response) -> None:
         if response.ok:
@@ -110,16 +117,16 @@ class NineRouterProvider:
             params["lang"] = language
         response = requests.get(
             self._url(f"audio/voices?{urlencode(params)}"),
-            headers=self._headers(None),
+            headers=self._headers(None, include_auth=not self._is_noauth_tts_provider(provider)),
             timeout=60,
         )
         self._raise_for_response(response)
         body = response.json()
-        data = body.get("data", body if isinstance(body, list) else [])
+        data = body.get("data") or body.get("voices") or (body if isinstance(body, list) else [])
         voices = []
         for item in data:
             if isinstance(item, dict):
-                voice_id = item.get("model") or item.get("id") or item.get("voice") or item.get("name")
+                voice_id = item.get("model") or item.get("id") or item.get("voice") or item.get("voice_id") or item.get("name")
                 if voice_id:
                     voices.append(str(voice_id))
             elif isinstance(item, str):
@@ -189,17 +196,24 @@ class NineRouterProvider:
             raise NineRouterError("providers.ninerouter.tts_model is empty")
         output_ext = os.path.splitext(output_path)[1].lstrip(".").lower()
         response_format = str(self.config.get("tts_response_format", "") or output_ext or "mp3").strip().lower()
+        selected_voice = str(voice or self.config.get("tts_voice", "") or "").strip()
+        if selected_voice and model.lower().startswith("edge-tts"):
+            model = selected_voice if selected_voice.lower().startswith("edge-tts/") else f"edge-tts/{selected_voice}"
         payload = {
             "model": model,
             "input": text,
         }
-        selected_voice = str(voice or self.config.get("tts_voice", "") or "").strip()
         if selected_voice:
             payload["voice"] = selected_voice
         path = "audio/speech"
         if response_format:
             path = f"{path}?{urlencode({'response_format': response_format})}"
-        response = requests.post(self._url(path), headers=self._headers(), json=payload, timeout=self.timeout)
+        response = requests.post(
+            self._url(path),
+            headers=self._headers(include_auth=not self._is_noauth_tts_model(model)),
+            json=payload,
+            timeout=self.timeout,
+        )
         self._raise_for_response(response)
         self._write_media_response(response, output_path, "audio")
         return GeneratedFile(path=output_path, provider="ninerouter", model=model)

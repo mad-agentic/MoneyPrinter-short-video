@@ -3,7 +3,6 @@ config.json
 .mp/
 .crawl4ai/
 venv/
-Songs/
 google-maps-scraper-0.9.7/
 niche.txt
 *.exe
@@ -13,4 +12,3 @@ auto.sh
 .env
 /frontend/node_modules
 refs/
-/docs/superpowers

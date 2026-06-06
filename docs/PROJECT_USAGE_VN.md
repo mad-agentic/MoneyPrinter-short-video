@@ -461,6 +461,15 @@ Checklist ngắn:
 
 ## 15. Quy tắc nội dung trước khi publish
 
+Publish state nen dung thong nhat:
+
+- `ready_for_review`: video da render, chua upload.
+- `published`: upload thanh cong.
+- `publish_failed`: upload loi, co the retry.
+- `publish_skipped`: user hoac config bo qua upload.
+- `crosspost_skipped`: PostBridge tat hoac chua cau hinh.
+- `crosspost_failed`: PostBridge loi sau khi YouTube upload.
+
 Trước khi đăng video:
 
 - Script không có stage direction như `(pause)`, `[music]`, `Narrator:` nếu TTS sẽ đọc thành tiếng.
@@ -479,3 +488,128 @@ Trước khi đăng video:
 - Muốn sửa logic provider, dùng `src/providers/` và `src/llm_provider.py`, không gọi API trực tiếp từ feature code.
 - Muốn sửa config, dùng helper trong `src/config.py`, không đọc `config.json` trực tiếp trong business logic mới.
 - Khi sửa TTS voice/model, phải giữ đồng bộ giữa config, API, UI, và `src/classes/Tts.py`.
+
+## 17. Cap nhat Phase 2-5 trong backend
+
+### Subtitle glossary va adapt script
+
+API generate va translate da nhan field `glossary` theo dang:
+
+```text
+AI Agent = tac nhan AI
+workflow = quy trinh
+```
+
+Khi co `script` custom, backend se normalize truoc khi dua vao TTS:
+
+- Bo nhan cau truc nhu `Hook:`, `CTA:`, `Main points:`.
+- Ap dung glossary neu co.
+- Luu `original_script` va `subtitle_adaptation` vao `session.json`.
+
+Endpoint lien quan:
+
+```text
+POST /youtube/{account_id}/translate-script
+POST /youtube/{account_id}/generate
+```
+
+### Renderer track
+
+`renderer = "moviepy"` van la mac dinh va la duong render MP4 chinh.
+
+`renderer = "html"` hien la prototype: backend co `src/renderers/html_renderer.py` de ghi file `.composition.html` deterministic. Chua thay MoviePy, chua render MP4 that bang browser + FFmpeg.
+
+### Content template va style preset
+
+API generate da nhan:
+
+```json
+{
+  "template": "tips",
+  "style_preset": "clean"
+}
+```
+
+Template hop le:
+
+- `tips`
+- `story`
+- `facts`
+- `tutorial`
+- `pov`
+
+Backend luu `content_plan` va `media_selection` vao `session.json` de dung lai cho UI/renderer.
+
+### Duplicate detection
+
+Moi session co `content_fingerprint`. Khi generate ma khong bat `force_new_session`, backend se tim session cung subject/fingerprint de reuse hoac canh bao trung noi dung.
+
+### Scheduler publish
+
+Co endpoint:
+
+```text
+POST /youtube/sessions/{session_id}/schedule
+```
+
+Body mau:
+
+```json
+{
+  "run_at": "2026-06-06T10:00:00+07:00",
+  "platforms": ["youtube", "twitter", "affiliate"]
+}
+```
+
+Backend se:
+
+- Luu queue vao `.mp/publish_queue.json`.
+- Doi session stage thanh `scheduled`.
+- Khong auto upload ngay. Can worker/runner doc queue de publish that.
+
+### Test nhanh
+
+```powershell
+python -m unittest tests.test_phase_completion -v
+python -m py_compile src\subtitles\glossary.py src\subtitles\adaptation.py src\renderers\html_renderer.py src\content_engine.py src\scheduler.py src\api\youtube.py src\research_engine.py
+```
+
+## 18. Frontend Production Controls
+
+YouTube workspace da co panel `Production Controls` de dung cac option Phase 2-5 truc tiep tu UI.
+
+Panel nay nam trong tab YouTube, ben duoi `Subtitle Language`, truoc `Publish & Metadata Options`.
+
+Control hien co:
+
+- `Template`: `tips`, `story`, `facts`, `tutorial`, `pov`.
+- `Style Preset`: `clean`, `cinematic`, `caption_heavy`, `fast_cut`, `minimal`.
+- `Renderer`: `moviepy`, `html`.
+- `Glossary`: moi dong `term = translation` hoac `term: translation`.
+- `Schedule At`: thoi gian xep lich theo browser local time.
+- `Schedule Platforms`: `YouTube`, `Twitter/X`, `Affiliate`.
+
+Luu y:
+
+- `moviepy` van la renderer chinh de tao MP4.
+- `html` hien chi la prototype composition, chua render MP4 that.
+- `Schedule At` hien ghi queue vao backend; worker auto publish chua bat.
+- Preset UI duoc luu trong browser `localStorage` key `mp_youtube_production_controls_v1`.
+
+Test frontend:
+
+```powershell
+cd frontend
+npm.cmd run lint
+npm.cmd run build
+```
+
+## 19. Parallel Image Generation
+
+YouTube pipeline tao title cover truoc, sau do tao scene images song song. So worker lay tu `threads` trong `config.json`, nhung app clamp toi da 4 de tranh provider rate-limit.
+
+Khuyen nghi khi dung 9Router image:
+
+- `threads: 2` cho may/line mang on dinh vua phai.
+- `threads: 3` neu provider tra anh on dinh.
+- Khong nen day qua 4 vi image model co the cham hon hoac bi 429/timeout.

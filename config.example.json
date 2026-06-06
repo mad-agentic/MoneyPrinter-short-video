@@ -51,6 +51,7 @@
   "scraper_timeout": 300,
   "outreach_message_subject": "I have a question...",
   "outreach_message_body_file": "outreach_message.html",
+  "cc_mode": "script",
   "stt_provider": "local_whisper",
   "whisper_model": "base",
   "whisper_device": "auto",
