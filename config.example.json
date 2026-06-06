@@ -25,7 +25,7 @@
       "tts_response_format": "wav",
       "stt_model": "gemini/gemini-2.5-flash",
       "stt_response_format": "srt",
-      "search_model": "search-combo",
+      "search_model": "tavily/search",
       "search_max_results": 10
     },
     "local": {

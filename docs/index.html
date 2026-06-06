@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MoneyPrinter - Tự động hóa short video local</title>
+  <meta name="description" content="MoneyPrinter biến một ý tưởng thành video dọc hoàn chỉnh: research, script, ảnh, voice, phụ đề, dựng video và upload từ một dashboard local.">
+  <style>
+    :root {
+      --bg: #0c1017;
+      --panel: #121722;
+      --panel-2: #171d2a;
+      --border: #263043;
+      --text: #eef2f8;
+      --muted: #a8b0bf;
+      --accent: #4cc9f0;
+      --good: #9bdb77;
+      --warn: #f6c85f;
+      --code: #070a0f;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      line-height: 1.6;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: #d7ecff;
+      padding: 2px 6px;
+      font-family: Consolas, "JetBrains Mono", monospace;
+      font-size: 0.92em;
+    }
+    pre {
+      margin: 0;
+      overflow-x: auto;
+      background: var(--code);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px;
+      color: #e8edf7;
+      font-family: Consolas, "JetBrains Mono", monospace;
+      font-size: 0.92rem;
+      line-height: 1.55;
+    }
+
+    .container { width: min(1160px, calc(100% - 40px)); margin: 0 auto; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(12, 16, 23, 0.94);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+    }
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 64px;
+      gap: 18px;
+    }
+    .brand { font-weight: 800; }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.94rem; }
+
+    .hero {
+      padding: 72px 0 42px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #101725 0%, var(--bg) 100%);
+    }
+    .badge {
+      display: inline-flex;
+      border: 1px solid rgba(76, 201, 240, 0.45);
+      background: rgba(76, 201, 240, 0.08);
+      color: #c8f2ff;
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 0.86rem;
+      margin-bottom: 22px;
+    }
+    h1, h2, h3 { line-height: 1.15; letter-spacing: 0; }
+    h1 { max-width: 900px; margin: 0 0 18px; font-size: clamp(2.15rem, 5vw, 4.1rem); }
+    h2 { margin: 0 0 12px; font-size: clamp(1.55rem, 3vw, 2.35rem); }
+    h3 { margin: 0 0 8px; font-size: 1.08rem; }
+    .lead { max-width: 820px; margin: 0 0 28px; color: var(--muted); font-size: 1.08rem; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      font-weight: 700;
+    }
+    .button.primary { background: var(--accent); color: #061018; border-color: var(--accent); }
+    .button.secondary { background: transparent; }
+
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 34px; }
+    .stat, .card, .shot, .step {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28);
+    }
+    .stat { padding: 16px; }
+    .stat strong { display: block; color: var(--good); font-size: 1.55rem; line-height: 1.1; }
+    .stat span { color: var(--muted); font-size: 0.9rem; }
+
+    section { padding: 58px 0; }
+    .section-alt { background: #0f1420; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { padding: 20px; }
+    .card p, .step p { margin: 0; color: var(--muted); }
+    .tag { color: var(--warn); font-size: 0.86rem; font-weight: 700; text-transform: uppercase; }
+
+    .pipeline { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
+    .step { padding: 14px; min-height: 124px; }
+    .step b { display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; border-radius: 50%; background: rgba(76, 201, 240, 0.12); color: var(--accent); margin-bottom: 10px; }
+    .step strong { display: block; margin-bottom: 4px; }
+
+    .screenshot-main { margin-top: 30px; }
+    .shot { overflow: hidden; margin: 0; }
+    .shot img { display: block; width: 100%; height: auto; }
+    .shot figcaption { padding: 12px 14px; color: var(--muted); font-size: 0.92rem; border-top: 1px solid var(--border); }
+    .setup-list { margin: 0; padding-left: 22px; color: var(--muted); }
+    .setup-list li { margin: 8px 0; }
+    .note { border-left: 4px solid var(--good); background: rgba(155, 219, 119, 0.08); padding: 14px 16px; color: #dcefd0; border-radius: 0 8px 8px 0; }
+    .video-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: start; margin: 26px 0; }
+    .video-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28); }
+    .video-card video { display: block; width: 100%; aspect-ratio: 9 / 16; border: 0; background: var(--code); object-fit: cover; }
+    .video-card figcaption { padding: 12px 14px; color: var(--muted); font-size: 0.92rem; border-top: 1px solid var(--border); }
+    .language-switch {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 20;
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      background: rgba(7, 10, 15, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.34);
+      backdrop-filter: blur(12px);
+    }
+    .language-switch button {
+      min-width: 76px;
+      min-height: 34px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .language-switch button[aria-pressed="true"] {
+      background: var(--accent);
+      color: #061018;
+    }
+    footer { border-top: 1px solid var(--border); padding: 28px 0; color: var(--muted); }
+
+    @media (max-width: 980px) {
+      .stats, .grid, .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 640px) {
+      .container { width: min(100% - 28px, 1160px); }
+      .nav { align-items: flex-start; flex-direction: column; padding: 12px 0; }
+      .stats, .grid, .grid.two, .pipeline, .video-grid { grid-template-columns: 1fr; }
+      .hero { padding-top: 46px; }
+      .language-switch { right: 12px; bottom: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="language-switch" aria-label="Language selector">
+    <button type="button" data-set-lang="en" aria-pressed="true">English</button>
+    <button type="button" data-set-lang="vi" aria-pressed="false">Tiếng Việt</button>
+  </div>
+
+  <header class="topbar">
+    <div class="container nav">
+      <div class="brand">MoneyPrinter Short Video</div>
+      <nav class="nav-links" aria-label="Điều hướng tài liệu">
+        <a href="#pipeline">Pipeline</a>
+        <a href="#setup">Setup</a>
+        <a href="#features">Tính năng</a>
+        <a href="#demo-shorts">Demo Shorts</a>
+        <a href="#screenshots">Ảnh giao diện</a>
+        <a href="PROJECT_USAGE_VN.md">Hướng dẫn chi tiết</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <div class="badge">Local-first · 1-click pipeline · không bắt buộc API trả phí</div>
+        <h1>Từ một ý tưởng thành video short hoàn chỉnh trên máy local.</h1>
+        <p class="lead">MoneyPrinter tự động hóa research, viết script, tạo ảnh, tạo voice, sinh phụ đề, dựng video dọc và chuẩn bị upload YouTube Shorts, Twitter/X, TikTok, Instagram từ một dashboard.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="https://github.com/mad-agentic/MoneyPrinter-short-video">Mở GitHub</a>
+          <a class="button secondary" href="#setup">Xem cách setup</a>
+          <a class="button secondary" href="../README.md">README tiếng Anh</a>
+          <a class="button secondary" href="../readme_vn.md">README tiếng Việt</a>
+        </div>
+        <div class="stats" aria-label="Thông tin nhanh">
+          <div class="stat"><strong>7</strong><span>stage tạo video</span></div>
+          <div class="stat"><strong>0đ</strong><span>phí API bắt buộc</span></div>
+          <div class="stat"><strong>1080×1920</strong><span>video dọc chuẩn short</span></div>
+          <div class="stat"><strong>.mp/</strong><span>session runtime local</span></div>
+        </div>
+        <figure class="shot screenshot-main">
+          <img src="screenshots/1clickGeneratetovideo.png" alt="Dashboard MoneyPrinter tạo YouTube Short một click">
+          <figcaption>Dashboard chính: nhập chủ đề, chọn ngôn ngữ/voice, review script, tạo phụ đề, dựng video và upload.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="pipeline">
+      <div class="container">
+        <h2>Pipeline tạo video</h2>
+        <p class="lead">Mỗi stage ghi dữ liệu vào session riêng. Nếu lỗi giữa chừng, có thể resume hoặc regenerate đúng stage bị lỗi.</p>
+        <div class="pipeline">
+          <div class="step"><b>1</b><strong>Research</strong><p>Tìm trend, góc khai thác và ý tưởng video.</p></div>
+          <div class="step"><b>2</b><strong>Script</strong><p>Viết hook, thân bài, CTA và metadata.</p></div>
+          <div class="step"><b>3</b><strong>Images</strong><p>Tạo ảnh dọc 9:16 cho từng cảnh.</p></div>
+          <div class="step"><b>4</b><strong>Voice</strong><p>Tạo audio bằng KittenTTS, Edge TTS, Gemini TTS hoặc provider khác.</p></div>
+          <div class="step"><b>5</b><strong>Subtitles</strong><p>Sinh caption SRT từ audio thật.</p></div>
+          <div class="step"><b>6</b><strong>Compose</strong><p>Dựng MP4 1080×1920 bằng MoviePy, FFmpeg, ImageMagick.</p></div>
+          <div class="step"><b>7</b><strong>Publish</strong><p>Review thủ công rồi upload/cross-post khi sẵn sàng.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="setup" class="section-alt">
+      <div class="container">
+        <h2>Setup nhanh trên Windows</h2>
+        <p class="lead">Dùng khi clone project mới hoặc chuyển project sang máy khác.</p>
+        <div class="grid two">
+          <div class="card">
+            <h3>Lệnh chạy nhanh</h3>
+            <pre># 1. Clone project
+git clone https://github.com/mad-agentic/MoneyPrinter-short-video.git
+cd MoneyPrinter-short-video
+
+# 2. Tạo config local
+copy config.example.json config.json
+
+# 3. Cài backend + frontend
+setup.bat
+
+# 4. Chạy app
+start_hub.bat</pre>
+          </div>
+          <div class="card">
+            <h3>Checklist trước khi dùng</h3>
+            <ol class="setup-list">
+              <li>Cài Python 3.12, Node.js 18+, FFmpeg, ImageMagick 7.x.</li>
+              <li>Cài Firefox nếu muốn upload YouTube/X bằng browser automation.</li>
+              <li>Mở <code>config.json</code> và set <code>imagemagick_path</code>.</li>
+              <li>Chọn LLM provider: Ollama, 9Router, Gemini hoặc OpenAI-compatible endpoint.</li>
+              <li>Kiểm tra image model, TTS voice, STT model và search model trong Settings.</li>
+              <li>Mở app tại <code>http://localhost:5174</code>.</li>
+            </ol>
+          </div>
+        </div>
+        <p class="note">Không commit file runtime local: <code>config.json</code>, <code>.env</code>, <code>.mp/</code>, browser profile, cookies, token, media output, <code>venv/</code>, <code>frontend/node_modules/</code>.</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <h2>Lệnh debug thủ công</h2>
+        <div class="grid two">
+          <div class="card">
+            <h3>Backend FastAPI</h3>
+            <pre>cd src
+..\venv\Scripts\python.exe -m uvicorn api.main:app --port 15001 --reload</pre>
+          </div>
+          <div class="card">
+            <h3>Frontend Vite</h3>
+            <pre>cd frontend
+npm run dev -- --host 127.0.0.1 --port 5174</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="section-alt">
+      <div class="container">
+        <h2>Tính năng chính</h2>
+        <p class="lead">Project gom workflow tạo video, review media và phân phối nội dung vào một app local.</p>
+        <div class="grid">
+          <div class="card"><span class="tag">YouTube</span><h3>YouTube Shorts Workspace</h3><p>Tạo subject, script, audio text, caption, video output và metadata trong cùng session.</p></div>
+          <div class="card"><span class="tag">Research</span><h3>Research & Ideas</h3><p>Research trend, brainstorm hook, chọn idea rồi đẩy sang YouTube session.</p></div>
+          <div class="card"><span class="tag">Voice</span><h3>TTS & STT</h3><p>Chọn voice/model cho từng ngôn ngữ, sinh audio và phụ đề từ audio thật.</p></div>
+          <div class="card"><span class="tag">Media</span><h3>Media Engine</h3><p>Review ảnh scene, chọn ảnh thủ công, regenerate stage cần thiết.</p></div>
+          <div class="card"><span class="tag">Social</span><h3>Twitter/X & Cross-post</h3><p>Quản lý account, compose post, hỗ trợ phát hành nội dung sau khi review.</p></div>
+          <div class="card"><span class="tag">Local</span><h3>Resumable Sessions</h3><p>Dữ liệu runtime nằm trong <code>.mp/sessions/&lt;uuid&gt;/</code>, dễ resume và kiểm tra output.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="demo-shorts">
+      <div class="container">
+        <h2>Video Shorts đã tạo</h2>
+        <p class="lead">Xem 3 video output thực tế được tạo từ workflow này.</p>
+        <div class="video-grid">
+          <figure class="video-card">
+            <video src="../assets/20260407_112341_e8d0a04d.mp4" autoplay muted loop playsinline controls preload="metadata"></video>
+            <figcaption>Output video 1</figcaption>
+          </figure>
+          <figure class="video-card">
+            <video src="../assets/20260605_151346_7d613607.mp4" autoplay muted loop playsinline controls preload="metadata"></video>
+            <figcaption>Output video 2</figcaption>
+          </figure>
+          <figure class="video-card">
+            <video src="../assets/20260606_090454_2b7146fe.mp4" autoplay muted loop playsinline controls preload="metadata"></video>
+            <figcaption>Output video 3</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="screenshots">
+      <div class="container">
+        <h2>Ảnh giao diện</h2>
+        <p class="lead">Ảnh lấy từ dashboard local hiện có trong project.</p>
+        <div class="grid two">
+          <figure class="shot"><img src="screenshots/Info Step123.png" alt="Script editor và audio text"><figcaption>Script editor, audio text, language selector.</figcaption></figure>
+          <figure class="shot"><img src="screenshots/info step456.png" alt="CC draft, image engine và generation progress"><figcaption>CC draft, image engine, generation progress.</figcaption></figure>
+          <figure class="shot"><img src="screenshots/Generatiom progress.png" alt="Pipeline progress và media gallery"><figcaption>Pipeline progress và media gallery.</figcaption></figure>
+          <figure class="shot"><img src="screenshots/Research.png" alt="Research and Ideas workspace"><figcaption>Research & Ideas workspace.</figcaption></figure>
+          <figure class="shot"><img src="screenshots/Twitter.png" alt="Twitter X manager"><figcaption>Twitter/X manager.</figcaption></figure>
+          <figure class="shot"><img src="screenshots/Afiliate.png" alt="Affiliate CRM"><figcaption>Affiliate CRM và product pitches.</figcaption></figure>
+          <figure class="shot"><img src="screenshots/setting llm.png" alt="LLM settings"><figcaption>LLM backend và model settings.</figcaption></figure>
+          <figure class="shot"><img src="screenshots/setting runtime.png" alt="Runtime settings"><figcaption>Runtime, browser và encoding settings.</figcaption></figure>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>
+        <a href="https://github.com/mad-agentic/MoneyPrinter-short-video">GitHub</a> ·
+        <a href="PROJECT_USAGE_VN.md">Hướng dẫn setup chi tiết</a> ·
+        <a href="../README.md">README English</a> ·
+        <a href="../readme_vn.md">README tiếng Việt</a>
+      </p>
+      <p>MoneyPrinter Short Video - local-first automation for short-video creation.</p>
+    </div>
+  </footer>
+  <script>
+    const translations = {
+      en: {
+        title: "MoneyPrinter - Local short video automation",
+        description: "MoneyPrinter turns one idea into a complete vertical video: research, script, images, voice, subtitles, video composition, and upload from one local dashboard.",
+        brand: "MoneyPrinter Short Video",
+        navPipeline: "Pipeline",
+        navSetup: "Setup",
+        navFeatures: "Features",
+        navDemo: "Demo Shorts",
+        navScreenshots: "Screenshots",
+        navGuide: "Full guide",
+        badge: "Local-first · 1-click pipeline · no paid API required",
+        h1: "Turn one idea into a finished short video on your local machine.",
+        heroLead: "MoneyPrinter automates research, script writing, image generation, voice, subtitles, vertical video composition, and YouTube Shorts/Twitter/X/TikTok/Instagram upload preparation from one dashboard.",
+        github: "Open GitHub",
+        setupCta: "View setup",
+        readmeEn: "English README",
+        readmeVi: "Vietnamese README",
+        statStages: "video stages",
+        statCost: "required API cost",
+        statSize: "standard short video",
+        statRuntime: "local runtime sessions",
+        heroCaption: "Main dashboard: enter a topic, choose language/voice, review script, generate subtitles, compose video, and upload.",
+        pipelineTitle: "Video pipeline",
+        pipelineLead: "Each stage writes data into its own session. If a run fails midway, resume or regenerate only the failed stage.",
+        step1Title: "Research",
+        step1Body: "Find trends, angles, and video ideas.",
+        step2Title: "Script",
+        step2Body: "Write hook, body, CTA, and metadata.",
+        step3Title: "Images",
+        step3Body: "Create 9:16 vertical images for each scene.",
+        step4Title: "Voice",
+        step4Body: "Generate audio with KittenTTS, Edge TTS, Gemini TTS, or another provider.",
+        step5Title: "Subtitles",
+        step5Body: "Generate SRT captions from the final audio.",
+        step6Title: "Compose",
+        step6Body: "Build 1080×1920 MP4 with MoviePy, FFmpeg, and ImageMagick.",
+        step7Title: "Publish",
+        step7Body: "Review manually, then upload or cross-post when ready.",
+        setupTitle: "Quick setup on Windows",
+        setupLead: "Use this when cloning the project or moving it to another machine.",
+        quickCommands: "Quick commands",
+        setupChecklist: "Pre-run checklist",
+        checklist1: "Install Python 3.12, Node.js 18+, FFmpeg, and ImageMagick 7.x.",
+        checklist2: "Install Firefox if you want YouTube/X upload through browser automation.",
+        checklist3: "Open config.json and set imagemagick_path.",
+        checklist4: "Choose an LLM provider: Ollama, 9Router, Gemini, or any OpenAI-compatible endpoint.",
+        checklist5: "Check image model, TTS voice, STT model, and search model in Settings.",
+        checklist6: "Open the app at http://localhost:5174.",
+        note: "Do not commit local runtime files: config.json, .env, .mp/, browser profiles, cookies, tokens, generated media, venv/, frontend/node_modules/.",
+        debugTitle: "Manual debug commands",
+        backendTitle: "FastAPI backend",
+        frontendTitle: "Vite frontend",
+        featuresTitle: "Main features",
+        featuresLead: "The project combines video creation, media review, and content distribution into one local app.",
+        feature1Title: "YouTube Shorts Workspace",
+        feature1Body: "Create subject, script, audio text, captions, video output, and metadata in one session.",
+        feature2Title: "Research & Ideas",
+        feature2Body: "Research trends, brainstorm hooks, pick an idea, then push it into a YouTube session.",
+        feature3Title: "TTS & STT",
+        feature3Body: "Choose voice/model per language, generate audio, and create captions from real audio.",
+        feature4Title: "Media Engine",
+        feature4Body: "Review scene images, select images manually, and regenerate only the needed stage.",
+        feature5Title: "Twitter/X & Cross-post",
+        feature5Body: "Manage accounts, compose posts, and distribute content after review.",
+        feature6Title: "Resumable Sessions",
+        feature6Body: "Runtime data lives in .mp/sessions/<uuid>/, making output review and resume easier.",
+        demoTitle: "Generated Shorts",
+        demoLead: "Watch 3 real output videos generated from this workflow.",
+        demoVideo1Caption: "Output video 1",
+        demoVideo2Caption: "Output video 2",
+        demoVideo3Caption: "Output video 3",
+        screenshotsTitle: "Screenshots",
+        screenshotsLead: "Screenshots are from the local dashboard included in this project.",
+        shot1: "Script editor, audio text, language selector.",
+        shot2: "CC draft, image engine, generation progress.",
+        shot3: "Pipeline progress and media gallery.",
+        shot4: "Research & Ideas workspace.",
+        shot5: "Twitter/X manager.",
+        shot6: "Affiliate CRM and product pitches.",
+        shot7: "LLM backend and model settings.",
+        shot8: "Runtime, browser, and encoding settings.",
+        footerGuide: "Full setup guide",
+        footerText: "MoneyPrinter Short Video - local-first automation for short-video creation."
+      },
+      vi: {
+        title: "MoneyPrinter - Tự động hóa short video local",
+        description: "MoneyPrinter biến một ý tưởng thành video dọc hoàn chỉnh: research, script, ảnh, voice, phụ đề, dựng video và upload từ một dashboard local.",
+        brand: "MoneyPrinter Short Video",
+        navPipeline: "Pipeline",
+        navSetup: "Setup",
+        navFeatures: "Tính năng",
+        navDemo: "Demo Shorts",
+        navScreenshots: "Ảnh giao diện",
+        navGuide: "Hướng dẫn chi tiết",
+        badge: "Local-first · 1-click pipeline · không bắt buộc API trả phí",
+        h1: "Từ một ý tưởng thành video short hoàn chỉnh trên máy local.",
+        heroLead: "MoneyPrinter tự động hóa research, viết script, tạo ảnh, tạo voice, sinh phụ đề, dựng video dọc và chuẩn bị upload YouTube Shorts, Twitter/X, TikTok, Instagram từ một dashboard.",
+        github: "Mở GitHub",
+        setupCta: "Xem cách setup",
+        readmeEn: "README tiếng Anh",
+        readmeVi: "README tiếng Việt",
+        statStages: "stage tạo video",
+        statCost: "phí API bắt buộc",
+        statSize: "video dọc chuẩn short",
+        statRuntime: "session runtime local",
+        heroCaption: "Dashboard chính: nhập chủ đề, chọn ngôn ngữ/voice, review script, tạo phụ đề, dựng video và upload.",
+        pipelineTitle: "Pipeline tạo video",
+        pipelineLead: "Mỗi stage ghi dữ liệu vào session riêng. Nếu lỗi giữa chừng, có thể resume hoặc regenerate đúng stage bị lỗi.",
+        step1Title: "Research",
+        step1Body: "Tìm trend, góc khai thác và ý tưởng video.",
+        step2Title: "Script",
+        step2Body: "Viết hook, thân bài, CTA và metadata.",
+        step3Title: "Images",
+        step3Body: "Tạo ảnh dọc 9:16 cho từng cảnh.",
+        step4Title: "Voice",
+        step4Body: "Tạo audio bằng KittenTTS, Edge TTS, Gemini TTS hoặc provider khác.",
+        step5Title: "Subtitles",
+        step5Body: "Sinh caption SRT từ audio thật.",
+        step6Title: "Compose",
+        step6Body: "Dựng MP4 1080×1920 bằng MoviePy, FFmpeg, ImageMagick.",
+        step7Title: "Publish",
+        step7Body: "Review thủ công rồi upload/cross-post khi sẵn sàng.",
+        setupTitle: "Setup nhanh trên Windows",
+        setupLead: "Dùng khi clone project mới hoặc chuyển project sang máy khác.",
+        quickCommands: "Lệnh chạy nhanh",
+        setupChecklist: "Checklist trước khi dùng",
+        checklist1: "Cài Python 3.12, Node.js 18+, FFmpeg, ImageMagick 7.x.",
+        checklist2: "Cài Firefox nếu muốn upload YouTube/X bằng browser automation.",
+        checklist3: "Mở config.json và set imagemagick_path.",
+        checklist4: "Chọn LLM provider: Ollama, 9Router, Gemini hoặc OpenAI-compatible endpoint.",
+        checklist5: "Kiểm tra image model, TTS voice, STT model và search model trong Settings.",
+        checklist6: "Mở app tại http://localhost:5174.",
+        note: "Không commit file runtime local: config.json, .env, .mp/, browser profile, cookies, token, media output, venv/, frontend/node_modules/.",
+        debugTitle: "Lệnh debug thủ công",
+        backendTitle: "Backend FastAPI",
+        frontendTitle: "Frontend Vite",
+        featuresTitle: "Tính năng chính",
+        featuresLead: "Project gom workflow tạo video, review media và phân phối nội dung vào một app local.",
+        feature1Title: "YouTube Shorts Workspace",
+        feature1Body: "Tạo subject, script, audio text, caption, video output và metadata trong cùng session.",
+        feature2Title: "Research & Ideas",
+        feature2Body: "Research trend, brainstorm hook, chọn idea rồi đẩy sang YouTube session.",
+        feature3Title: "TTS & STT",
+        feature3Body: "Chọn voice/model cho từng ngôn ngữ, sinh audio và phụ đề từ audio thật.",
+        feature4Title: "Media Engine",
+        feature4Body: "Review ảnh scene, chọn ảnh thủ công, regenerate stage cần thiết.",
+        feature5Title: "Twitter/X & Cross-post",
+        feature5Body: "Quản lý account, compose post, hỗ trợ phát hành nội dung sau khi review.",
+        feature6Title: "Resumable Sessions",
+        feature6Body: "Dữ liệu runtime nằm trong .mp/sessions/<uuid>/, dễ resume và kiểm tra output.",
+        demoTitle: "Video Shorts đã tạo",
+        demoLead: "Xem 3 video output thực tế được tạo từ workflow này.",
+        demoVideo1Caption: "Output video 1",
+        demoVideo2Caption: "Output video 2",
+        demoVideo3Caption: "Output video 3",
+        screenshotsTitle: "Ảnh giao diện",
+        screenshotsLead: "Ảnh lấy từ dashboard local hiện có trong project.",
+        shot1: "Script editor, audio text, language selector.",
+        shot2: "CC draft, image engine, generation progress.",
+        shot3: "Pipeline progress và media gallery.",
+        shot4: "Research & Ideas workspace.",
+        shot5: "Twitter/X manager.",
+        shot6: "Affiliate CRM và product pitches.",
+        shot7: "LLM backend và model settings.",
+        shot8: "Runtime, browser và encoding settings.",
+        footerGuide: "Hướng dẫn setup chi tiết",
+        footerText: "MoneyPrinter Short Video - local-first automation for short-video creation."
+      }
+    };
+
+    const bindings = [
+      ["title", "title"],
+      ["meta[name='description']", "description", "content"],
+      [".brand", "brand"],
+      [".nav-links a:nth-child(1)", "navPipeline"],
+      [".nav-links a:nth-child(2)", "navSetup"],
+      [".nav-links a:nth-child(3)", "navFeatures"],
+      [".nav-links a:nth-child(4)", "navDemo"],
+      [".nav-links a:nth-child(5)", "navScreenshots"],
+      [".nav-links a:nth-child(6)", "navGuide"],
+      [".badge", "badge"],
+      ["h1", "h1"],
+      [".hero .lead", "heroLead"],
+      [".hero-actions a:nth-child(1)", "github"],
+      [".hero-actions a:nth-child(2)", "setupCta"],
+      [".hero-actions a:nth-child(3)", "readmeEn"],
+      [".hero-actions a:nth-child(4)", "readmeVi"],
+      [".stats .stat:nth-child(1) span", "statStages"],
+      [".stats .stat:nth-child(2) span", "statCost"],
+      [".stats .stat:nth-child(3) span", "statSize"],
+      [".stats .stat:nth-child(4) span", "statRuntime"],
+      [".screenshot-main figcaption", "heroCaption"],
+      ["#pipeline h2", "pipelineTitle"],
+      ["#pipeline .lead", "pipelineLead"],
+      [".pipeline .step:nth-child(1) strong", "step1Title"],
+      [".pipeline .step:nth-child(1) p", "step1Body"],
+      [".pipeline .step:nth-child(2) strong", "step2Title"],
+      [".pipeline .step:nth-child(2) p", "step2Body"],
+      [".pipeline .step:nth-child(3) strong", "step3Title"],
+      [".pipeline .step:nth-child(3) p", "step3Body"],
+      [".pipeline .step:nth-child(4) strong", "step4Title"],
+      [".pipeline .step:nth-child(4) p", "step4Body"],
+      [".pipeline .step:nth-child(5) strong", "step5Title"],
+      [".pipeline .step:nth-child(5) p", "step5Body"],
+      [".pipeline .step:nth-child(6) strong", "step6Title"],
+      [".pipeline .step:nth-child(6) p", "step6Body"],
+      [".pipeline .step:nth-child(7) strong", "step7Title"],
+      [".pipeline .step:nth-child(7) p", "step7Body"],
+      ["#setup h2", "setupTitle"],
+      ["#setup .lead", "setupLead"],
+      ["#setup .card:nth-child(1) h3", "quickCommands"],
+      ["#setup .card:nth-child(2) h3", "setupChecklist"],
+      ["#setup li:nth-child(1)", "checklist1"],
+      ["#setup li:nth-child(2)", "checklist2"],
+      ["#setup li:nth-child(3)", "checklist3"],
+      ["#setup li:nth-child(4)", "checklist4"],
+      ["#setup li:nth-child(5)", "checklist5"],
+      ["#setup li:nth-child(6)", "checklist6"],
+      ["#setup .note", "note"],
+      ["main > section:nth-of-type(4) h2", "debugTitle"],
+      ["main > section:nth-of-type(4) .card:nth-child(1) h3", "backendTitle"],
+      ["main > section:nth-of-type(4) .card:nth-child(2) h3", "frontendTitle"],
+      ["#features h2", "featuresTitle"],
+      ["#features .lead", "featuresLead"],
+      ["#features .card:nth-child(1) h3", "feature1Title"],
+      ["#features .card:nth-child(1) p", "feature1Body"],
+      ["#features .card:nth-child(2) h3", "feature2Title"],
+      ["#features .card:nth-child(2) p", "feature2Body"],
+      ["#features .card:nth-child(3) h3", "feature3Title"],
+      ["#features .card:nth-child(3) p", "feature3Body"],
+      ["#features .card:nth-child(4) h3", "feature4Title"],
+      ["#features .card:nth-child(4) p", "feature4Body"],
+      ["#features .card:nth-child(5) h3", "feature5Title"],
+      ["#features .card:nth-child(5) p", "feature5Body"],
+      ["#features .card:nth-child(6) h3", "feature6Title"],
+      ["#features .card:nth-child(6) p", "feature6Body"],
+      ["#demo-shorts h2", "demoTitle"],
+      ["#demo-shorts .lead", "demoLead"],
+      ["#demo-shorts .video-card:nth-child(1) figcaption", "demoVideo1Caption"],
+      ["#demo-shorts .video-card:nth-child(2) figcaption", "demoVideo2Caption"],
+      ["#demo-shorts .video-card:nth-child(3) figcaption", "demoVideo3Caption"],
+      ["#screenshots h2", "screenshotsTitle"],
+      ["#screenshots .lead", "screenshotsLead"],
+      ["#screenshots figure:nth-child(1) figcaption", "shot1"],
+      ["#screenshots figure:nth-child(2) figcaption", "shot2"],
+      ["#screenshots figure:nth-child(3) figcaption", "shot3"],
+      ["#screenshots figure:nth-child(4) figcaption", "shot4"],
+      ["#screenshots figure:nth-child(5) figcaption", "shot5"],
+      ["#screenshots figure:nth-child(6) figcaption", "shot6"],
+      ["#screenshots figure:nth-child(7) figcaption", "shot7"],
+      ["#screenshots figure:nth-child(8) figcaption", "shot8"],
+      ["footer a:nth-child(2)", "footerGuide"],
+      ["footer p:nth-child(2)", "footerText"]
+    ];
+
+    function setLanguage(lang) {
+      const dict = translations[lang] || translations.en;
+      document.documentElement.lang = lang;
+      bindings.forEach(([selector, key, attribute]) => {
+        const element = document.querySelector(selector);
+        if (!element || dict[key] === undefined) return;
+        if (attribute) element.setAttribute(attribute, dict[key]);
+        else element.textContent = dict[key];
+      });
+      document.querySelectorAll("[data-set-lang]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.setLang === lang));
+      });
+      localStorage.setItem("moneyprinter-doc-lang", lang);
+    }
+
+    document.querySelectorAll("[data-set-lang]").forEach((button) => {
+      button.addEventListener("click", () => setLanguage(button.dataset.setLang));
+    });
+
+    setLanguage(localStorage.getItem("moneyprinter-doc-lang") || "en");
+  </script>
+</body>
+</html>

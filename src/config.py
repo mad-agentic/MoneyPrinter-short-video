@@ -562,7 +562,7 @@ def _default_ninerouter_config(config_json: dict | None = None) -> dict:
         "tts_response_format": "wav",
         "stt_model": "gemini/gemini-2.5-flash",
         "stt_response_format": "srt",
-        "search_model": "search-combo",
+        "search_model": "tavily/search",
         "search_max_results": 10,
     }
 
@@ -591,7 +591,7 @@ def get_provider_configs() -> dict:
         ninerouter.update(raw_ninerouter)
 
     if not str(ninerouter.get("search_model", "") or "").strip():
-        ninerouter["search_model"] = "search-combo"
+        ninerouter["search_model"] = "tavily/search"
 
     local = providers.get("local", {})
     if not isinstance(local, dict):
