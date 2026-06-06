@@ -11,6 +11,46 @@ from providers.schemas import GeneratedFile, SearchResult
 class NineRouterError(RuntimeError):
     pass
 
+NOAUTH_TTS_MODELS = (
+    "edge-tts/vi-VN-HoaiMyNeural",
+    "edge-tts/vi-VN-NamMinhNeural",
+    "google-tts/vi",
+    "google-tts/en",
+    "local-device",
+)
+
+EDGE_TTS_FALLBACK_VOICES = (
+    "vi-VN-HoaiMyNeural",
+    "vi-VN-NamMinhNeural",
+    "en-US-JennyNeural",
+    "en-US-GuyNeural",
+    "en-US-AriaNeural",
+    "en-GB-SoniaNeural",
+    "en-GB-RyanNeural",
+    "ja-JP-NanamiNeural",
+    "ja-JP-KeitaNeural",
+    "ko-KR-SunHiNeural",
+    "ko-KR-InJoonNeural",
+    "zh-CN-XiaoxiaoNeural",
+    "zh-CN-YunxiNeural",
+    "th-TH-PremwadeeNeural",
+    "th-TH-NiwatNeural",
+    "id-ID-GadisNeural",
+    "id-ID-ArdiNeural",
+    "fr-FR-DeniseNeural",
+    "fr-FR-HenriNeural",
+    "de-DE-KatjaNeural",
+    "de-DE-ConradNeural",
+    "es-ES-ElviraNeural",
+    "es-ES-AlvaroNeural",
+    "pt-BR-FranciscaNeural",
+    "pt-BR-AntonioNeural",
+    "hi-IN-SwaraNeural",
+    "hi-IN-MadhurNeural",
+)
+
+GOOGLE_TTS_FALLBACK_VOICES = ("vi", "en", "ja", "ko", "zh", "th", "id", "fr", "de", "es", "pt", "hi")
+
 
 class NineRouterProvider:
     def __init__(self, config: dict) -> None:
@@ -38,6 +78,21 @@ class NineRouterProvider:
     def _is_noauth_tts_model(self, model: str) -> bool:
         provider = model.split("/", 1)[0].strip().lower()
         return provider in {"edge-tts", "google-tts", "local-device"}
+
+    def _fallback_voices(self, provider: str, language: str = "") -> list[str]:
+        provider_key = provider.strip().lower()
+        lang = language.strip().lower()
+        if provider_key == "edge-tts":
+            voices = list(EDGE_TTS_FALLBACK_VOICES)
+            if lang:
+                prefix = f"{lang}-"
+                voices = sorted(voices, key=lambda voice: (not voice.lower().startswith(prefix), voice.lower()))
+            return voices
+        if provider_key == "google-tts":
+            return list(GOOGLE_TTS_FALLBACK_VOICES)
+        if provider_key == "local-device":
+            return ["local-device"]
+        return []
 
     def _raise_for_response(self, response: requests.Response) -> None:
         if response.ok:
@@ -87,7 +142,13 @@ class NineRouterProvider:
         return self._get_models("models/image")
 
     def list_tts_models(self) -> list[str]:
-        return self._get_models("models/tts")
+        try:
+            return sorted(set([*self._get_models("models/tts"), *NOAUTH_TTS_MODELS]))
+        except NineRouterError as exc:
+            message = str(exc).lower()
+            if "401" in message or "unauthorized" in message or "api key required" in message:
+                return list(NOAUTH_TTS_MODELS)
+            raise
 
     def list_stt_models(self) -> list[str]:
         return self._get_models("models/stt")
@@ -120,7 +181,14 @@ class NineRouterProvider:
             headers=self._headers(None, include_auth=not self._is_noauth_tts_provider(provider)),
             timeout=60,
         )
-        self._raise_for_response(response)
+        try:
+            self._raise_for_response(response)
+        except NineRouterError as exc:
+            fallback = self._fallback_voices(provider, language)
+            message = str(exc).lower()
+            if fallback and ("401" in message or "unauthorized" in message or "api key required" in message):
+                return fallback
+            raise
         body = response.json()
         data = body.get("data") or body.get("voices") or (body if isinstance(body, list) else [])
         voices = []
@@ -131,7 +199,7 @@ class NineRouterProvider:
                     voices.append(str(voice_id))
             elif isinstance(item, str):
                 voices.append(item)
-        return sorted(set(voices))
+        return sorted(set(voices)) or self._fallback_voices(provider, language)
 
     def _select_web_model(self, configured_model: str = "") -> str:
         configured_model = configured_model.strip()

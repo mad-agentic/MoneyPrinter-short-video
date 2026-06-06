@@ -9,6 +9,16 @@ from providers.ninerouter import NineRouterProvider
 
 
 class NineRouterTtsTests(unittest.TestCase):
+    def test_tts_model_list_falls_back_to_noauth_models_on_unauthorized(self):
+        provider = NineRouterProvider({"base_url": "http://router", "api_key": "bad-key"})
+        response = Mock(ok=False, status_code=401, text='{"error":"API key required for remote API access"}')
+
+        with patch("providers.ninerouter.requests.get", return_value=response):
+            models = provider.list_tts_models()
+
+        self.assertIn("edge-tts/vi-VN-HoaiMyNeural", models)
+        self.assertIn("google-tts/vi", models)
+
     def test_edge_voice_list_omits_auth_and_parses_voice_id(self):
         provider = NineRouterProvider({"base_url": "http://router", "api_key": "bad-key"})
         response = Mock(ok=True)
@@ -19,6 +29,17 @@ class NineRouterTtsTests(unittest.TestCase):
 
         self.assertEqual(voices, ["vi-VN-HoaiMyNeural", "vi-VN-NamMinhNeural"])
         self.assertNotIn("Authorization", get.call_args.kwargs["headers"])
+
+    def test_edge_voice_list_falls_back_on_unauthorized(self):
+        provider = NineRouterProvider({"base_url": "http://router", "api_key": "bad-key"})
+        response = Mock(ok=False, status_code=401, text='{"error":"API key required for remote API access"}')
+
+        with patch("providers.ninerouter.requests.get", return_value=response):
+            voices = provider.list_voices("edge-tts")
+
+        self.assertIn("vi-VN-HoaiMyNeural", voices)
+        self.assertIn("vi-VN-NamMinhNeural", voices)
+        self.assertIn("en-US-JennyNeural", voices)
 
     def test_edge_speech_omits_auth_for_noauth_provider(self):
         provider = NineRouterProvider({
