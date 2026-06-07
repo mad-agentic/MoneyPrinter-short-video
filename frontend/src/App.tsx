@@ -5,7 +5,35 @@ import ResearchWorkspace from './ResearchWorkspace';
 const API = 'http://127.0.0.1:15001';
 const DRAFT_SESSION_KEY = '__draft__';
 const KITTEN_VOICE_OPTIONS = ['Jasper', 'Luna', 'Milo', 'Ava', 'Emma'];
-const OMNIVOICE_VOICE_OPTIONS = ['Jasper', 'Milo', 'Luna', 'Ava', 'Emma'];
+const OMNIVOICE_VOICE_OPTIONS = [
+  'vi_female_ref',
+  'vi_male_ref',
+  'en_female_ref',
+  'british_ref',
+  'japan_ref',
+  'korean_ref',
+  'Jasper',
+  'Milo',
+  'Luna',
+  'Ava',
+  'Emma',
+  'EN Nova',
+  'EN Kai',
+  'EN Sage',
+  'EN Vera',
+  'EN Orion',
+  'EN Iris',
+  'EN Atlas',
+  'EN Breeze',
+  'VI Hoai',
+  'VI Minh',
+  'VI Linh',
+  'VI Thoai',
+  'VI An',
+  'VI Nam',
+  'VI Thao',
+  'VI Bao',
+];
 const VOICE_OPTIONS = KITTEN_VOICE_OPTIONS;
 const VIETNAMESE_TTS_VOICES = ['vi-VN-HoaiMyNeural', 'vi-VN-NamMinhNeural'];
 const SCRIPT_LANGUAGE_OPTIONS = [

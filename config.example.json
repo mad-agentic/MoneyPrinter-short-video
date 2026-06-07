@@ -68,6 +68,7 @@
   "omnivoice_device_map": "auto",
   "omnivoice_dtype": "auto",
   "omnivoice_instruct": "",
+  "omnivoice_reference_voice_ids": ["vi_female_ref", "vi_male_ref", "en_female_ref"],
   "tts_strict_mode": false,
   "video_encode_preset": "veryfast",
   "video_encode_crf": 24,

@@ -14,7 +14,7 @@ from api.session_manager import create_session, find_session_by_fingerprint, fin
 from api.log_stream import add_log
 from api.cancel_registry import request_cancel, is_cancelled, clear_cancel, GenerationCancelledError
 from llm_provider import ensure_model_selected
-from config import ROOT_DIR
+from config import ROOT_DIR, get_tts_engine
 from content_fingerprint import content_fingerprint
 from content_engine import build_content_plan, select_media_assets
 from scheduler import build_publish_queue, save_publish_queue
@@ -124,8 +124,10 @@ def _resolve_script_language(requested: str, *texts: str) -> str:
 
 VIETNAMESE_TTS_VOICES = {"vi-VN-HoaiMyNeural", "vi-VN-NamMinhNeural"}
 
-def _resolve_tts_voice(requested: str, language: str) -> str:
+def _resolve_tts_voice(requested: str, language: str, engine: str = "") -> str:
     voice = (requested or "").strip()
+    if (engine or "").strip().lower() == "omnivoice":
+        return voice
     if (language or "").strip().lower() == "vietnamese":
         return voice if voice in VIETNAMESE_TTS_VOICES else "vi-VN-HoaiMyNeural"
     return voice
@@ -200,7 +202,7 @@ def generate_and_upload_video(
         youtube.enable_cc = bool(enable_cc)
         youtube.cc_mode = str(cc_mode or "auto").strip().lower()
         tts_language = resolved_language
-        resolved_voice = _resolve_tts_voice(tts_voice, resolved_language)
+        resolved_voice = _resolve_tts_voice(tts_voice, resolved_language, get_tts_engine())
         tts = TTS(
             voice=resolved_voice or None,
             language=tts_language,
@@ -600,7 +602,7 @@ def generate_cc_preview(account_id: str, req: SubtitlePreviewRequest):
         youtube.english_cc_bottom = bool(req.english_cc_bottom)
         youtube.enable_cc = bool(req.enable_cc)
         youtube.cc_mode = str(req.cc_mode or "auto").strip().lower()
-        resolved_voice = _resolve_tts_voice(req.tts_voice, language)
+        resolved_voice = _resolve_tts_voice(req.tts_voice, language, get_tts_engine())
 
         tts = TTS(
             voice=resolved_voice or None,

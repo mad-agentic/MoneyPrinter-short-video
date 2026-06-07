@@ -1,0 +1,28 @@
+{
+    "voices":  [
+                   {
+                       "id":  "british_ref",
+                       "name":  "Vietnamese British Accent Ref",
+                       "language":  "vietnamese",
+                       "ref_audio":  "C:\\Users\\MAD\\Desktop\\MyGame\\MoneyPrinter-short-video\\assets\\omnivoice_refs\\british.wav",
+                       "ref_text":  "Aim bạn không tệ, tâm bạn đặt sai",
+                       "instruct":  "Vietnamese narrator, British accent style, clear voice, stable tone, natural pacing"
+                   },
+                   {
+                       "id":  "japan_ref",
+                       "name":  "Vietnamese Japan Accent Ref",
+                       "language":  "vietnamese",
+                       "ref_audio":  "C:\\Users\\MAD\\Desktop\\MyGame\\MoneyPrinter-short-video\\assets\\omnivoice_refs\\japan.wav",
+                       "ref_text":  "Aim bạn không tệ, tâm bạn đặt sai",
+                       "instruct":  "Vietnamese narrator, Japanese accent style, clear voice, stable tone, natural pacing"
+                   },
+                   {
+                       "id":  "korean_ref",
+                       "name":  "Vietnamese Korean Accent Ref",
+                       "language":  "vietnamese",
+                       "ref_audio":  "C:\\Users\\MAD\\Desktop\\MyGame\\MoneyPrinter-short-video\\assets\\omnivoice_refs\\korean.wav",
+                       "ref_text":  "Aim bạn không tệ, tâm bạn đặt sai",
+                       "instruct":  "Vietnamese narrator, Korean accent style, clear voice, stable tone, natural pacing"
+                   }
+               ]
+}

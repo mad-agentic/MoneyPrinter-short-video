@@ -149,6 +149,37 @@ Voice thường dùng:
 - `Ava`
 - `Emma`
 
+### OmniVoice local presets
+
+OmniVoice trong app khong dung voice ID co dinh nhu Edge TTS. UI hien preset, backend chuyen preset thanh `instruct` de model tao chat giong.
+
+English presets:
+
+- `EN Nova`: female, young adult, high pitch, american accent
+- `EN Kai`: male, young adult, moderate pitch, american accent
+- `EN Sage`: male, elderly, low pitch, british accent
+- `EN Vera`: female, middle-aged, moderate pitch, british accent
+- `EN Orion`: male, middle-aged, low pitch, american accent
+- `EN Iris`: female, child, high pitch, american accent
+- `EN Atlas`: male, young adult, high pitch, british accent
+- `EN Breeze`: female, young adult, whisper, american accent
+
+Vietnamese-first presets:
+
+- `VI Hoai`: female, young adult, moderate pitch
+- `VI Minh`: male, young adult, moderate pitch
+- `VI Linh`: female, middle-aged, low pitch
+- `VI Thoai`: male, middle-aged, low pitch
+- `VI An`: female, young adult, high pitch
+- `VI Nam`: male, young adult, high pitch
+- `VI Thao`: female, elderly, low pitch
+- `VI Bao`: male, elderly, low pitch
+
+Muon custom voice rieng, sua `omnivoice_instruct` trong `config.json`. Khi field nay co gia tri, backend uu tien no hon preset. Nguon check:
+
+- https://github.com/k2-fsa/OmniVoice
+- https://pypi.org/project/omnivoice/
+
 Không dùng voice tiếng Anh cho video tiếng Việt. Backend có fallback về `vi-VN-HoaiMyNeural`, nhưng tốt nhất vẫn chọn đúng trong UI.
 
 ## 5. Chạy app
@@ -206,6 +237,30 @@ Làm theo thứ tự này để ít lỗi nhất:
 Nguyên tắc an toàn: bật manual review. Không auto publish khi chưa xem video.
 
 Manual review la che do mac dinh. Chi bat auto publish sau khi da kiem tra account path, metadata va video output.
+
+### Them YouTube account trong dashboard
+
+Trong popup **Add YouTube Account**, dien nhu sau:
+
+1. `Nickname *`: ten de nho cho account, vi du `mad-youtube`, `finance-main`, `shorts-vn`.
+2. `Niche *`: chu de/ngach cua kenh, vi du `kiem tien online`, `motivation`, `tech AI`, `finance`.
+3. `Firefox Profile Path`: chi can dien neu muon app tu upload bang Selenium. Neu chi generate video, co the de trong.
+4. `Language`: ngon ngu mac dinh cua kenh/script, vi du `vietnamese` hoac `english`.
+
+Cach lay `Firefox Profile Path`:
+
+1. Mo Firefox va dang nhap san YouTube/YouTube Studio bang account muon upload.
+2. Go `about:profiles` tren thanh dia chi Firefox.
+3. Tim profile dang dung, copy dong `Root Directory`.
+4. Dan path do vao o `Firefox Profile Path`.
+
+Vi du:
+
+```text
+C:\Users\MAD\AppData\Roaming\Mozilla\Firefox\Profiles\abc123.default-release
+```
+
+Luu y: nut **Add Account** khong dang nhap YouTube cho ban. No chi luu account vao runtime cache `.mp/youtube.json`. Profile Firefox phai da dang nhap san neu muon upload tu dong.
 
 ## 7. Workflow Research & Ideas
 
@@ -444,7 +499,85 @@ npm run dev -- --host 127.0.0.1 --port 5174
 
 Nếu port bận, đổi port frontend, nhưng backend mặc định vẫn là `15001`.
 
-## 14. Quy trình dùng hằng ngày
+## 14. Runtime Settings trong dashboard
+
+Bang nay giai thich cac field trong panel **Runtime Settings**. Sau khi sua, bam **Save**. Neu thay backend/frontend van dung cau hinh cu, restart `start_hub.bat`.
+
+| Setting tren UI | Key trong `config.json` | Tac dung | Goi y nhanh |
+|---|---|---|---|
+| `Verbose logs` | `verbose` | In log chi tiet hon trong terminal/backend. | Bat khi debug loi, tat khi chay binh thuong cho gon log. |
+| `Headless browser` | `headless` | Chay automation browser khong mo cua so Firefox. | Tat khi can xem upload/browser lam gi; bat khi may da on dinh. |
+| `TTS strict mode` | `tts_strict_mode` | Neu TTS loi mot phan thi fail ca run thay vi tiep tuc voi audio thieu. | Bat khi can video sach; tat khi muon pipeline tiep tuc de test. |
+| `Default is for kids` | `is_for_kids` | Flag audience mac dinh khi upload YouTube. | Thuong de tat, tru khi kenh/video lam cho tre em. |
+| `Threads` | `threads` | So worker/luong cho render va mot so viec song song. Image generation bi clamp toi da 4 trong pipeline. | 2-4 on dinh; cao qua de gap rate-limit/timeout. |
+| `TTS engine` | `tts_engine` | Engine doc text thanh audio. | `omnivoice` chat luong cao can GPU; `kitten` nhanh/local; `ninerouter` dung cloud 9Router. |
+| `TTS fallback engine` | `tts_fallback_engine` | Engine du phong neu TTS chinh loi. | Nen khac engine chinh neu muon co fallback that. Neu chinh la `omnivoice`, fallback `kitten` hoac `ninerouter` se an toan hon. |
+| `TTS voice` | `tts_voice` | Giong doc mac dinh cho TTS. | Chon voice dung ngon ngu script. Voi OmniVoice, preset duoc doi thanh `instruct`. |
+| `STT provider` | `stt_provider` | Engine nghe audio de tao subtitle/caption. | `local_whisper` mien phi/local; `whisperx` can dependency rieng; `ninerouter` dung cloud; `third_party_assemblyai` can API key. |
+| `Whisper model` | `whisper_model` | Kich co model Whisper cho subtitle. | `tiny/base` nhanh, kem hon; `small` can bang; `medium` tot hon nhung cham. |
+| `Whisper device` | `whisper_device` | Thiet bi chay Whisper. | `auto` thu GPU roi fallback; `cpu` on dinh; `cuda` nhanh neu GPU/driver OK. |
+| `Whisper compute type` | `whisper_compute_type` | Do chinh xac/toc do tinh toan Whisper. | `int8` nhanh va nhe tren CPU; `float16` hop GPU; `float32` nang hon. |
+| `Whisper VAD filter` | `whisper_vad_filter` | Loc im lang/tieng on truoc khi transcribe. | Bat khi audio co im lang/noise; tat neu subtitle bi mat chu hoac muon nhanh. |
+| `Whisper beam size` | `whisper_beam_size` | Do rong search khi decode subtitle. | `1` nhanh; `2-3` tot hon nhung cham; toi da UI la 5. |
+| `Title audio intro` | `enable_title_audio` | Doc subject/title o dau video truoc noi dung chinh. | Bat neu muon intro ro chu de; tat neu muon vao thang hook. |
+| `Video preset` | `video_encode_preset` | Preset x264/FFmpeg, anh huong toc do encode. | `veryfast` can bang; `ultrafast/superfast` nhanh hon nhung file/quality kem hon; `medium` cham hon. |
+| `Video CRF (18-35)` | `video_encode_crf` | Chat luong nen video. So thap = dep hon/file lon hon; so cao = nhe hon/xau hon. | 20-24 dep/on dinh; 24-28 nhanh va nhe hon. |
+| `Script sentence length` | `script_sentence_length` | So cau muc tieu trong block script generate. | 3-5 hop YouTube Shorts; tang neu muon script dai hon moi block. |
+| `Subtitle font file` | `font` | Font dung de render subtitle qua MoviePy/ImageMagick. | Chon file trong folder fonts. Neu subtitle loi, kiem tra font va `imagemagick_path`. |
+
+Luu y rieng cho OmniVoice:
+
+- `tts_voice` la preset UI, khong phai voice ID server co dinh.
+- `omnivoice_instruct` neu co gia tri se override preset voice.
+- Audio dai duoc app chia thanh chunk ngan va reset seed truoc moi chunk de giam lech giong. Khong dung OmniVoice long-form vi co the dung o buoc `model.generate()` tren mot so may.
+- Neu chon `vi_female_ref`, `vi_male_ref`, hoac `en_female_ref`, backend se dung `ref_audio` + `ref_text` tu `assets/omnivoice_refs/voices.json` cho moi chunk trong cung video. Cach nay on dinh voice hon preset instruct.
+
+### OmniVoice reference voices
+
+Tao 3 voice ref synthetic mac dinh:
+
+```powershell
+uv run python scripts\omnivoice_refs.py create-defaults
+```
+
+Lenh nay tao:
+
+```text
+assets/omnivoice_refs/vi_female_ref.wav
+assets/omnivoice_refs/vi_male_ref.wav
+assets/omnivoice_refs/en_female_ref.wav
+assets/omnivoice_refs/voices.json
+```
+
+Kiem tra danh sach:
+
+```powershell
+uv run python scripts\omnivoice_refs.py list
+```
+
+Test mot voice:
+
+```powershell
+uv run python scripts\omnivoice_refs.py test vi_female_ref
+```
+
+Sau khi tao refs, vao dashboard chon:
+
+```text
+TTS engine = omnivoice
+TTS voice = vi_female_ref | vi_male_ref | en_female_ref
+```
+
+Log khi chay dung ref se co:
+
+```text
+OmniVoice reference voice active (vi_female_ref)
+OmniVoice chunk 1/3 started (... chars)
+```
+
+Neu chua tao file `.wav`, backend se fallback ve preset/instruct cua OmniVoice va voice co the van lech giua chunks.
+
+## 15. Quy trình dùng hằng ngày
 
 Checklist ngắn:
 
@@ -459,7 +592,7 @@ Checklist ngắn:
 9. Review video trong session.
 10. Upload hoặc cross-post sau khi đã kiểm tra.
 
-## 15. Quy tắc nội dung trước khi publish
+## 16. Quy tắc nội dung trước khi publish
 
 Publish state nen dung thong nhat:
 
@@ -481,7 +614,7 @@ Trước khi đăng video:
 - Video không dùng ảnh sai context, ảnh lỗi mặt/tay/text, hoặc ảnh có watermark không mong muốn.
 - Không publish tự động nếu chưa xem video output.
 
-## 16. Ghi nhớ quan trọng
+## 17. Ghi nhớ quan trọng
 
 - `config.json` là cấu hình local, không commit.
 - `.mp/` là dữ liệu runtime, không coi là source code.
@@ -489,7 +622,7 @@ Trước khi đăng video:
 - Muốn sửa config, dùng helper trong `src/config.py`, không đọc `config.json` trực tiếp trong business logic mới.
 - Khi sửa TTS voice/model, phải giữ đồng bộ giữa config, API, UI, và `src/classes/Tts.py`.
 
-## 17. Cap nhat Phase 2-5 trong backend
+## 18. Cap nhat Phase 2-5 trong backend
 
 ### Subtitle glossary va adapt script
 
@@ -574,7 +707,7 @@ python -m unittest tests.test_phase_completion -v
 python -m py_compile src\subtitles\glossary.py src\subtitles\adaptation.py src\renderers\html_renderer.py src\content_engine.py src\scheduler.py src\api\youtube.py src\research_engine.py
 ```
 
-## 18. Frontend Production Controls
+## 19. Frontend Production Controls
 
 YouTube workspace da co panel `Production Controls` de dung cac option Phase 2-5 truc tiep tu UI.
 
@@ -604,7 +737,7 @@ npm.cmd run lint
 npm.cmd run build
 ```
 
-## 19. Parallel Image Generation
+## 20. Parallel Image Generation
 
 YouTube pipeline tao title cover truoc, sau do tao scene images song song. So worker lay tu `threads` trong `config.json`, nhung app clamp toi da 4 de tranh provider rate-limit.
 

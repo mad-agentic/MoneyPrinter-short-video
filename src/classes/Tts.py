@@ -1,5 +1,8 @@
 import os
 import re
+import random
+import threading
+import time
 import unicodedata
 import numpy as np
 import soundfile as sf
@@ -18,11 +21,15 @@ from config import (
     get_omnivoice_dtype,
     get_omnivoice_instruct,
 )
+from omnivoice_refs import resolve_omnivoice_reference_voice
 from status import warning, info
 
 KITTEN_MODEL = "KittenML/kitten-tts-mini-0.8"
 KITTEN_SAMPLE_RATE = 24000
 OMNIVOICE_SAMPLE_RATE = 24000
+OMNIVOICE_CHUNK_SEED = 424242
+OMNIVOICE_HEARTBEAT_INTERVAL_SECONDS = 15
+OMNIVOICE_POSSIBLE_HANG_SECONDS = 180
 
 
 def _resolve_omnivoice_dtype(dtype_name: str):
@@ -49,8 +56,61 @@ def _voice_to_omnivoice_instruct(voice_name: str) -> str:
         "luna": "female, moderate pitch",
         "ava": "female, high pitch",
         "emma": "female, whisper",
+        "en nova": "female, young adult, high pitch, american accent",
+        "en kai": "male, young adult, moderate pitch, american accent",
+        "en sage": "male, elderly, low pitch, british accent",
+        "en vera": "female, middle-aged, moderate pitch, british accent",
+        "en orion": "male, middle-aged, low pitch, american accent",
+        "en iris": "female, child, high pitch, american accent",
+        "en atlas": "male, young adult, high pitch, british accent",
+        "en breeze": "female, young adult, whisper, american accent",
+        "vi hoai": "female, young adult, moderate pitch",
+        "vi minh": "male, young adult, moderate pitch",
+        "vi linh": "female, middle-aged, low pitch",
+        "vi thoai": "male, middle-aged, low pitch",
+        "vi an": "female, young adult, high pitch",
+        "vi nam": "male, young adult, high pitch",
+        "vi thao": "female, elderly, low pitch",
+        "vi bao": "male, elderly, low pitch",
     }
     return mapping.get(voice_key, "")
+
+def _seed_omnivoice_generation(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    try:
+        import torch
+        torch.manual_seed(seed)
+        if hasattr(torch, "cuda") and torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except Exception:
+        pass
+
+def _run_omnivoice_generate_with_heartbeat(model, kwargs: dict, idx: int, total: int, char_count: int):
+    started = time.monotonic()
+    done = threading.Event()
+
+    def heartbeat() -> None:
+        while not done.wait(OMNIVOICE_HEARTBEAT_INTERVAL_SECONDS):
+            elapsed = int(time.monotonic() - started)
+            suffix = ", possible hang" if elapsed >= OMNIVOICE_POSSIBLE_HANG_SECONDS else ""
+            info(f"OmniVoice chunk {idx}/{total} still generating... {elapsed}s elapsed{suffix}")
+
+    info(f"OmniVoice chunk {idx}/{total} started ({char_count} chars)")
+    heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+    heartbeat_thread.start()
+    try:
+        audio = model.generate(**kwargs)
+        elapsed = int(time.monotonic() - started)
+        info(f"OmniVoice chunk {idx}/{total} done in {elapsed}s")
+        return audio
+    except Exception:
+        elapsed = int(time.monotonic() - started)
+        warning(f"OmniVoice chunk {idx}/{total} failed after {elapsed}s")
+        raise
+    finally:
+        done.set()
+        heartbeat_thread.join(timeout=1)
 
 class TTS:
     def __init__(self, voice: Optional[str] = None, language: Optional[str] = None) -> None:
@@ -387,6 +447,13 @@ class TTS:
         return output_file
 
     def _to_numpy_audio(self, audio) -> np.ndarray:
+        if isinstance(audio, (list, tuple)):
+            parts = [self._to_numpy_audio(part) for part in audio]
+            parts = [part for part in parts if part.size > 0]
+            if not parts:
+                return np.asarray([], dtype=np.float32)
+            return parts[0] if len(parts) == 1 else np.concatenate(parts)
+
         if hasattr(audio, "detach"):
             audio = audio.detach().cpu().numpy()
         elif hasattr(audio, "cpu") and hasattr(audio, "numpy"):
@@ -400,15 +467,32 @@ class TTS:
     def _synthesize_with_omnivoice(self, normalized_text: str, output_file: str) -> str:
         model = self._get_omnivoice_model()
         omni_instruct = get_omnivoice_instruct() or _voice_to_omnivoice_instruct(self._voice)
+        reference_voice = resolve_omnivoice_reference_voice(self._voice)
+        if reference_voice:
+            info(f"OmniVoice reference voice active ({reference_voice.get('id')})")
 
-        kwargs = {
-            "text": normalized_text,
-        }
-        if omni_instruct:
-            kwargs["instruct"] = omni_instruct
+        chunks = self._split_text_for_tts(normalized_text, max_chars=220)
+        if not chunks:
+            raise RuntimeError("OmniVoice chunking produced no chunks")
 
-        audio = model.generate(**kwargs)
-        np_audio = self._to_numpy_audio(audio)
+        rendered_chunks: list[np.ndarray] = []
+        for idx, chunk in enumerate(chunks, start=1):
+            if len(chunks) > 1:
+                info(f"OmniVoice synthesis chunk {idx}/{len(chunks)} ({len(chunk)} chars, seeded)")
+            _seed_omnivoice_generation(OMNIVOICE_CHUNK_SEED)
+            kwargs = {"text": chunk}
+            if reference_voice:
+                kwargs["ref_audio"] = str(reference_voice["ref_audio"])
+                kwargs["ref_text"] = str(reference_voice["ref_text"])
+            elif omni_instruct:
+                kwargs["instruct"] = omni_instruct
+            audio = _run_omnivoice_generate_with_heartbeat(model, kwargs, idx, len(chunks), len(chunk))
+            rendered_chunks.append(self._to_numpy_audio(audio))
+
+        np_audio = rendered_chunks[0] if len(rendered_chunks) == 1 else np.concatenate(rendered_chunks)
+        if np_audio.size == 0:
+            raise RuntimeError("OmniVoice generated empty audio")
+
         sample_rate = get_tts_sample_rate() or OMNIVOICE_SAMPLE_RATE
         sf.write(output_file, np_audio, sample_rate)
         info(f"OmniVoice synthesis complete (language={self._language}, voice={self._voice})")
